@@ -853,7 +853,7 @@ pub fn preview_frame(
     let t = at
         .unwrap_or_else(|| (p.style.hook_seconds * 0.5).min(plan.total * 0.3))
         .clamp(0.0, (plan.total - 0.05).max(0.0));
-    let out = opts.cache_dir.join(format!("frame-{}.jpg", rng_name()));
+    let out = opts.cache_dir.join(format!("frame-{}.png", rng_name()));
     let mut args = plan.args.clone();
     args.extend([
         "-ss".into(),
@@ -862,8 +862,6 @@ pub fn preview_frame(
         "1".into(),
         "-update".into(),
         "1".into(),
-        "-q:v".into(),
-        "3".into(),
     ]);
     args.push(out.to_string_lossy().into_owned());
     run_ffmpeg(tools, &args, work.path(), 0.0, &cancel, &|_| {}, &|_| {})?;
