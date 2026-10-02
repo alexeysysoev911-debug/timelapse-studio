@@ -33,7 +33,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
     "publisher": "Alexey S.",
     "copyright": "© 2026 Alexey S.",
     "category": "Video",
