@@ -598,10 +598,21 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
         }
     }
 
-    let _ = write!(
-        fc,
-        "[{cur}]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1[vout];"
-    );
+    if inp.audio {
+        // Метки BT.709 ставим на сами кадры (setparams): ffmpeg 7.1+ берёт цветовые свойства
+        // энкодера из фильтров и игнорирует -colorspace, если кадры «unknown».
+        let _ = write!(
+            fc,
+            "[{cur}]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1,\
+             setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[vout];"
+        );
+    } else {
+        // кадр предпросмотра (PNG): полный диапазон RGB — без проблем с диапазоном у MJPEG
+        let _ = write!(
+            fc,
+            "[{cur}]scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,setsar=1[vout];"
+        );
+    }
 
     // ---------- звук ----------
     if inp.audio {
@@ -652,20 +663,22 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
     }
     args.extend(["-t".into(), f(total)]);
     args.extend(["-r".into(), fps.to_string()]);
-    args.extend(
-        [
-            "-colorspace",
-            "bt709",
-            "-color_primaries",
-            "bt709",
-            "-color_trc",
-            "bt709",
-            "-color_range",
-            "tv",
-        ]
-        .iter()
-        .map(|s| s.to_string()),
-    );
+    if inp.audio {
+        args.extend(
+            [
+                "-colorspace",
+                "bt709",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-color_range",
+                "tv",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        );
+    }
     if inp.audio {
         args.extend(
             ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
