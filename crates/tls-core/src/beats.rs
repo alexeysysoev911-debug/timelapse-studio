@@ -34,10 +34,10 @@ pub fn detect(tools: &Tools, path: &Path, start: f64, analyze: f64) -> Option<(f
     }
     let x: Vec<f32> = out
         .stdout
-           .as_chunks::<4>()
-           .0
-           .iter()
-           .map(|b| f32::from_le_bytes(*b))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect();
     analyze_pcm(&x).map(|(t0, p)| (start + t0, p))
 }
