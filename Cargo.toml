@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/tls-core", "src-tauri"]
+
+[workspace.package]
+version = "3.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Alexey S."]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+[workspace.lints.clippy]
+field_reassign_with_default = "allow"

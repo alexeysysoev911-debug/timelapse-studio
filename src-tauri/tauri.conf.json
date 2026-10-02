@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Timelapse Studio",
+  "version": "3.0.0",
+  "identifier": "com.alexeys.timelapsestudio",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm --prefix ui run dev",
+    "beforeBuildCommand": "npm --prefix ui run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Timelapse Studio",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "center": true,
+        "dragDropEnabled": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "Alexey S.",
+    "copyright": "© 2026 Alexey S.",
+    "category": "Video",
+    "shortDescription": "Таймлапс-ролики для TikTok, Reels, Shorts и Telegram",
+    "longDescription": "Сборка вертикальных и горизонтальных роликов из таймлапс-клипов: музыка, переходы в такт, стабилизация, удаление мерцания, тексты, обложки и описания с хэштегами.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": {
+      "resources/ffmpeg/": "ffmpeg/",
+      "../LICENSES/": "licenses/"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Russian", "English"],
+        "displayLanguageSelector": false
+      },
+      "wix": { "language": ["ru-RU", "en-US"] }
+    },
+    "fileAssociations": [
+      { "ext": ["tlsproj"], "name": "Timelapse Studio Project", "description": "Проект Timelapse Studio", "role": "Editor" }
+    ]
+  }
+}
