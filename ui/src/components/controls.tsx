@@ -8,7 +8,7 @@ export function Field({ label, hint, children, inline }: { label: string; hint?:
       <div className="field-label">
         <span>{label}</span>
         {hint && (
-          <span className="hint-icon" title={hint} aria-label={hint}>
+          <span className="hint-icon" data-tip={hint} aria-label={hint} tabIndex={0}>
             <Info size={13} />
           </span>
         )}
@@ -21,7 +21,7 @@ export function Field({ label, hint, children, inline }: { label: string; hint?:
 export function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
   const id = useId();
   return (
-    <label className={`toggle ${disabled ? "disabled" : ""}`} htmlFor={id} title={hint}>
+    <label className={`toggle ${disabled ? "disabled" : ""}`} htmlFor={id}>
       <input id={id} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className="track" aria-hidden />
       <span className="toggle-text">

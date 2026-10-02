@@ -14,7 +14,7 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { error: E
         <div className="fatal">
           <h1>Что-то пошло не так</h1>
           <p>Интерфейс столкнулся с ошибкой. Ваш проект сохранён автоматически.</p>
-          <pre className="log small">{String(this.state.error?.stack || this.state.error)}</pre>
+          <pre className="log small">{`${this.state.error?.message ?? ""}\n${this.state.error?.stack ?? ""}`}</pre>
           <button className="btn primary" onClick={() => location.reload()}>Перезапустить интерфейс</button>
         </div>
       );

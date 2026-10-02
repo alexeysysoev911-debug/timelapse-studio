@@ -34,6 +34,7 @@ fn main() {
         font: None,
         draft_seconds: None,
         seed: None,
+        ..Default::default()
     };
     let r = build(&tools, &p, &opts, &tls_core::render::Cancel::new(), &|e| {
         if let Event::Stage { text } = e {

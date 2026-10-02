@@ -1,8 +1,9 @@
-// Действия пользователя: импорт файлов, проекты, сборка.
-import { open, save, ask } from "@tauri-apps/plugin-dialog";
+// Действия пользователя: импорт файлов, проекты, сборка, предпросмотр, обновления.
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "./api";
 import { addUnique, baseName, classify, newClip, preflight } from "./logic";
-import { useStore } from "./store";
+import { renderOverlays } from "./overlay";
+import { saveNow, useStore } from "./store";
 import { defaultProject, type Project } from "./types";
 
 const st = () => useStore.getState();
@@ -10,6 +11,9 @@ const st = () => useStore.getState();
 const VIDEO = ["mp4", "mov", "mkv", "avi", "m4v", "webm", "ts", "mts", "m2ts", "wmv", "3gp"];
 const IMAGE = ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif"];
 const AUDIO = ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma"];
+
+/** Новый проект: встроенный энергичный трек уже выбран — ролик звучит «из коробки». */
+export const freshProject = () => defaultProject(st().appInfo?.builtin_music[0]?.token);
 
 /** Импорт путей (файлы и папки): проверка ffprobe, раскладка по типам. */
 export async function importPaths(paths: string[], forceKind?: "clips" | "photos" | "music") {
@@ -22,8 +26,7 @@ export async function importPaths(paths: string[], forceKind?: "clips" | "photos
       try {
         files.push(...(await api.listFolder(p)));
       } catch {
-        /* не папка и не медиа — отметим ниже */
-        files.push(p);
+        files.push(p); // не папка и не медиа — покажем ошибку ниже
       }
     }
   }
@@ -39,7 +42,7 @@ export async function importPaths(paths: string[], forceKind?: "clips" | "photos
   st().setMedia(items);
   const c = classify(items);
   const s = st();
-  s.update((p) => {
+  s.edit((p) => {
     if (forceKind === "music") {
       p.music.tracks = addUnique(p.music.tracks, c.music, (x) => x);
       return;
@@ -77,7 +80,7 @@ export async function pickSingle(kind: "image" | "font"): Promise<string | null>
   const filters = kind === "image" ? [{ name: "Изображения", extensions: ["png", "webp", "jpg", "jpeg"] }] : [{ name: "Шрифты", extensions: ["ttf", "otf"] }];
   const r = await open({ multiple: false, filters });
   if (!r || Array.isArray(r)) return null;
-  if (kind === "image") await api.allowFiles([r]);
+  await api.allowFiles([r]);
   return r;
 }
 
@@ -86,31 +89,63 @@ export async function pickFolder(): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
-async function confirmDiscard(): Promise<boolean> {
-  if (!st().dirty || !st().filePath) return true;
-  return ask("В проекте есть несохранённые изменения. Продолжить без сохранения?", { title: "Timelapse Studio", kind: "warning" });
+/** Открыть проект в редакторе (с проверкой файлов). */
+async function load(p: Project, path: string | null = null) {
+  st().replace(p, path);
+  await refreshMedia(p);
 }
 
+/** Новый проект. Предыдущий уже сохранён в библиотеке — к нему можно вернуться одной кнопкой. */
 export async function newProject() {
-  if (!(await confirmDiscard())) return;
-  st().replace(defaultProject(), null);
+  await saveNow();
+  const prev = st().project;
+  const hadContent = prev.clips.length > 0 || prev.id;
+  st().replace(freshProject(), null);
+  await saveNow();
+  if (hadContent && prev.id) {
+    st().toast("info", `Создан новый проект. «${prev.name}» сохранён в «Мои проекты».`, {
+      label: "Вернуть предыдущий",
+      run: () => openFromLibrary(prev.id),
+    });
+  }
 }
 
-export async function openProject(path?: string) {
-  if (!(await confirmDiscard())) return;
+export async function openFromLibrary(id: string) {
+  await saveNow();
+  try {
+    const p = await api.projectOpen(id);
+    await load(p);
+    st().set({ showHome: false });
+  } catch (e) {
+    st().toast("error", `Не удалось открыть проект: ${errorText(e)}`);
+  }
+}
+
+/** Импорт проекта из файла .tlsproj (попадает в библиотеку как новый). */
+export async function openProjectFile(path?: string) {
   const p = path ?? (await open({ multiple: false, filters: [{ name: "Проект Timelapse Studio", extensions: ["tlsproj"] }] }));
   if (!p || Array.isArray(p)) return;
   try {
+    await saveNow();
     const proj = await api.loadProject(p);
-    st().replace(proj, p);
-    await refreshMedia(proj);
+    proj.id = "";
+    await load(proj, p);
+    await saveNow();
+    st().set({ showHome: false });
     st().toast("ok", `Открыт проект «${proj.name}»`);
   } catch (e) {
     st().toast("error", `Не удалось открыть проект: ${errorText(e)}`);
   }
 }
 
+/** Экспорт проекта в файл (для переноса на другой компьютер). Ctrl+S просто подтверждает автосохранение. */
 export async function saveProject(as = false) {
+  await saveNow();
+  if (!as && !st().filePath) {
+    st().set({ dirty: false });
+    st().toast("ok", "Проект сохранён в «Мои проекты»");
+    return;
+  }
   let path = st().filePath;
   if (!path || as) {
     const r = await save({ defaultPath: `${st().project.name || "Проект"}.tlsproj`, filters: [{ name: "Проект Timelapse Studio", extensions: ["tlsproj"] }] });
@@ -120,7 +155,7 @@ export async function saveProject(as = false) {
   try {
     await api.saveProject(path, st().project);
     st().set({ filePath: path, dirty: false });
-    st().toast("ok", "Проект сохранён");
+    st().toast("ok", "Проект сохранён в файл");
   } catch (e) {
     st().toast("error", `Не удалось сохранить: ${errorText(e)}`);
   }
@@ -134,6 +169,16 @@ export async function refreshMedia(p: Project) {
     st().setMedia(await api.probe(all));
   } catch {
     /* ffmpeg недоступен — покажет экран ошибки */
+  }
+}
+
+async function freshInfo() {
+  try {
+    const info = await api.projectInfo(st().project);
+    st().set({ info });
+    return info;
+  } catch {
+    return st().info;
   }
 }
 
@@ -155,8 +200,10 @@ export async function startBuild(draft = false) {
       const i = project.targets.findIndex((t) => t.id === s.previewTarget);
       if (i > 0) project.targets.unshift(...project.targets.splice(i, 1));
       project.targets[0].enabled = true;
+      project.targets = project.targets.slice(0, 1);
     }
-    await api.startBuild(project, draft ? 8 : undefined);
+    const overlays = await renderOverlays(project, await freshInfo());
+    await api.startBuild(project, draft ? 8 : undefined, overlays);
   } catch (e) {
     s.set({ building: false, buildKind: null, stage: "" });
     s.toast("error", errorText(e));
@@ -168,19 +215,106 @@ export async function cancelBuild() {
   st().set({ stage: "Останавливаю…" });
 }
 
+/** Точный кадр через видеодвижок — со всем оформлением, как в итоговом ролике. */
 export async function renderFrame() {
   const s = st();
   if (!s.project.clips.some((c) => c.enabled)) {
     s.toast("warn", "Добавьте клипы — тогда покажу кадр с оформлением");
     return;
   }
-  s.set({ stage: "Рисую кадр…" });
+  s.set({ stage: "Рисую точный кадр…" });
   try {
-    const r = await api.previewFrame(s.project, s.previewTarget);
-    st().set({ frame: { path: r.path, at: Date.now() }, preview: "frame", stage: "" });
+    const project = structuredClone(s.project);
+    project.targets = project.targets.map((t) => ({ ...t, enabled: t.id === s.previewTarget }));
+    const overlays = await renderOverlays(project, await freshInfo());
+    const r = await api.previewFrame(project, s.previewTarget, { at: s.previewAt, scale: 0.5 }, overlays);
+    st().set({ frame: { path: r.path, at: Date.now() }, stage: "" });
     r.warnings.slice(0, 2).forEach((w) => st().toast("warn", w));
   } catch (e) {
     st().set({ stage: "" });
+    st().toast("error", errorText(e));
+  }
+}
+
+/** Ключ «подложки»: всё, что влияет на картинку видео (без текстов). */
+export function baseKey(p: Project, target: string, at: number | null): string {
+  const clips = p.clips.filter((c) => c.enabled).map((c) => [c.path, c.trim_start, c.trim_end]);
+  const s = p.style;
+  return JSON.stringify([clips, p.end_photos, target, at, s.fit, s.blur_sigma, s.look, s.look_strength, s.auto_color, s.sharpen, p.speed, p.transition, p.timelapse.hdr_tonemap]);
+}
+
+let baseSeq = 0;
+/** «Чистый» кадр для живого предпросмотра (+ кадр «до» для сравнения). */
+export async function loadBase() {
+  const s = st();
+  if (!s.project.clips.some((c) => c.enabled && s.media[c.path]?.info)) return;
+  const key = baseKey(s.project, s.previewTarget, s.previewAt);
+  if (s.base?.key === key) return;
+  const seq = ++baseSeq;
+  s.set({ baseLoading: true });
+  try {
+    const opt = { at: s.previewAt, bare: true, scale: 0.5 };
+    const after = await api.previewFrame(s.project, s.previewTarget, opt);
+    const needBefore = s.project.style.look !== "none" || s.project.style.auto_color || s.project.style.sharpen;
+    let before: string | null = null;
+    if (needBefore) {
+      const b = structuredClone(s.project);
+      b.style.auto_color = false;
+      b.style.sharpen = false;
+      before = (await api.previewFrame(b, s.previewTarget, { ...opt, look_override: "none" })).path;
+    }
+    if (seq === baseSeq) st().set({ base: { path: after.path, before, key }, baseLoading: false });
+  } catch (e) {
+    if (seq === baseSeq) {
+      st().set({ baseLoading: false });
+      st().toast("error", errorText(e));
+    }
+  }
+}
+
+let thumbsKey = "";
+export async function loadLookThumbs(force = false) {
+  const s = st();
+  const c = s.project.clips.find((x) => x.enabled && s.media[x.path]?.info);
+  if (!c) return;
+  const key = JSON.stringify([c.path, c.trim_start, s.previewTarget, s.project.style.fit]);
+  if (!force && key === thumbsKey && s.lookThumbs.length) return;
+  thumbsKey = key;
+  try {
+    const thumbs = await api.lookThumbs(s.project, s.previewTarget, s.previewAt ?? undefined);
+    st().set({ lookThumbs: thumbs });
+  } catch {
+    /* без миниатюр — список названий всё равно работает */
+  }
+}
+
+/** Проверка обновлений. silent — при запуске: молчим, если обновлений нет или нет интернета. */
+export async function checkUpdates(silent = false) {
+  try {
+    st().set({ updateError: null });
+    const u = await api.updateCheck();
+    st().set({ update: u });
+    if (u.available) {
+      st().toast("info", `Доступна версия ${u.version}`, { label: "Подробнее", run: () => st().set({ showAbout: true }) });
+    } else if (!silent) {
+      st().toast("ok", `У вас последняя версия ${u.current}`);
+    }
+  } catch (e) {
+    st().set({ updateError: errorText(e) });
+    if (!silent) st().toast("error", errorText(e));
+  }
+}
+
+export async function installUpdate() {
+  if (st().building) {
+    st().toast("warn", "Дождитесь окончания сборки — потом обновим программу.");
+    return;
+  }
+  st().set({ updateProgress: 0 });
+  try {
+    await api.updateInstall(); // при успехе программа перезапустится сама
+  } catch (e) {
+    st().set({ updateProgress: null });
     st().toast("error", errorText(e));
   }
 }

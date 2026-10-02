@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { AlertOctagon, Upload } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { api, errorText, onBuildDone, onBuildEvent, onCloseRequested } from "./api";
-import { cancelBuild, importPaths, newProject, openProject, refreshMedia, renderFrame, saveProject, startBuild } from "./actions";
-import { useStore } from "./store";
-import type { AppInfo } from "./types";
+import { api, errorText, onBuildDone, onBuildEvent, onCloseRequested, onUpdateProgress } from "./api";
+import { cancelBuild, checkUpdates, importPaths, newProject, openProjectFile, refreshMedia, renderFrame, saveProject, startBuild } from "./actions";
+import { enableAutosave, saveNow, useStore } from "./store";
+import { About } from "./components/About";
+import { Home } from "./components/Home";
+import { TooltipLayer } from "./components/Tooltip";
+import { defaultProject, type AppInfo } from "./types";
 import { BuildBar, Help, Results, Toasts, TopBar } from "./components/Chrome";
 import { Inspector } from "./components/Inspector";
 import { Library } from "./components/Library";
@@ -38,6 +41,7 @@ export default function App() {
       try {
         const i = await api.appInfo();
         setInfo(i);
+        useStore.getState().set({ appInfo: i });
         if (!i.ffmpeg) {
           setFatal(i.ffmpeg_error || "Видеодвижок (ffmpeg) не найден.");
           return;
@@ -45,11 +49,12 @@ export default function App() {
         const settings = await api.settingsLoad();
         useStore.getState().set({ settings });
         const saved = await api.autosaveLoad();
-        if (saved) {
-          useStore.getState().replace(saved, null);
-          await refreshMedia(saved);
-          if (saved.clips.length) useStore.getState().set({ selectedClip: saved.clips[0].id });
-        }
+        const proj = saved ?? defaultProject(i.builtin_music[0]?.token);
+        useStore.getState().replace(proj, null);
+        await refreshMedia(proj);
+        enableAutosave();
+        if (!saved) await saveNow();
+        if (settings.auto_update_check) setTimeout(() => checkUpdates(true), 4000);
       } catch (e) {
         setFatal(errorText(e));
       }
@@ -85,6 +90,14 @@ export default function App() {
     return () => {
       un1.then((f) => f());
       un2.then((f) => f());
+    };
+  }, []);
+
+  // прогресс загрузки обновления
+  useEffect(() => {
+    const un = onUpdateProgress(({ downloaded, total }) => useStore.getState().set({ updateProgress: total ? downloaded / total : 0.5 }));
+    return () => {
+      un.then((f) => f());
     };
   }, []);
 
@@ -139,7 +152,7 @@ export default function App() {
         saveProject(e.shiftKey);
       } else if (e.ctrlKey && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        openProject();
+        openProjectFile();
       } else if (e.ctrlKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         newProject();
@@ -149,8 +162,13 @@ export default function App() {
       } else if (e.key === "F1") {
         e.preventDefault();
         setHelp(true);
+      } else if (e.ctrlKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        s.set({ showHome: true });
       } else if (e.key === "Escape") {
-        if (s.showResults) s.set({ showResults: false });
+        if (s.showAbout) s.set({ showAbout: false });
+        else if (s.showHome) s.set({ showHome: false });
+        else if (s.showResults) s.set({ showResults: false });
         else if (help) setHelp(false);
         else if (s.building) cancelBuild();
       }
@@ -189,7 +207,10 @@ export default function App() {
       </div>
       <BuildBar />
       <Results />
-      {help && <Help onClose={() => setHelp(false)} version={info?.version ?? ""} />}
+      {help && <Help onClose={() => setHelp(false)} />}
+      <About />
+      <Home />
+      <TooltipLayer />
       {dragOver && (
         <div className="drop-overlay">
           <div>

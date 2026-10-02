@@ -15,6 +15,8 @@ pub struct Dirs {
 
 pub struct AppState {
     pub dirs: Dirs,
+    /// Встроенные музыка, LUT-образы, шрифты.
+    pub res: tls_core::looks::Resources,
     pub tools: Mutex<Option<Result<Tools, String>>>,
     pub job: Mutex<Option<Cancel>>,
 }
@@ -30,6 +32,12 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     pub notify: bool,
     pub prevent_sleep: bool,
+    /// Проверять обновления при запуске.
+    pub auto_update_check: bool,
+    /// Свой сервер обновлений (адрес latest.json); пусто — стандартный.
+    pub update_endpoint: String,
+    /// Последний открытый проект библиотеки.
+    pub last_project: String,
 }
 
 impl Default for Settings {
@@ -41,6 +49,9 @@ impl Default for Settings {
             recent: vec![],
             notify: true,
             prevent_sleep: true,
+            auto_update_check: true,
+            update_endpoint: String::new(),
+            last_project: String::new(),
         }
     }
 }
@@ -60,7 +71,23 @@ impl AppState {
             std::fs::create_dir_all(d)?;
         }
         cleanup_cache(&cache);
+        std::fs::create_dir_all(data.join("projects"))?;
+        // ресурсы: из установленной программы; при разработке — из исходников
+        let mut res = tls_core::looks::Resources::from_root(&resources);
+        if res.music_dir.is_none() {
+            res = tls_core::looks::Resources::from_root(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources"),
+            );
+        }
+        // встроенные треки можно слушать в интерфейсе
+        if let Some(d) = &res.music_dir {
+            let _ = app.asset_protocol_scope().allow_directory(d, false);
+        }
+        if let Some(d) = &res.fonts_dir {
+            let _ = app.asset_protocol_scope().allow_directory(d, false);
+        }
         Ok(AppState {
+            res,
             dirs: Dirs {
                 data,
                 cache,
@@ -103,6 +130,17 @@ impl AppState {
             .ok()
             .and_then(|d| serde_json::from_slice(&d).ok())
             .unwrap_or_default()
+    }
+
+    pub fn store_settings(&self, s: &Settings) {
+        let _ = tls_core::util::atomic_write(
+            &self.settings_path(),
+            &serde_json::to_vec_pretty(s).unwrap_or_default(),
+        );
+    }
+
+    pub fn projects_dir(&self) -> PathBuf {
+        self.dirs.data.join("projects")
     }
 
     pub fn out_dir(&self) -> PathBuf {

@@ -1,0 +1,5 @@
+[
+  { "id": "rise_up", "title": "Rise Up", "mood": "Энергичный", "genre": "электро-поп", "bpm": 124, "file": "rise_up.mp3" },
+  { "id": "lofi_workshop", "title": "Lo-Fi Workshop", "mood": "Спокойный", "genre": "лоу-фай", "bpm": 84, "file": "lofi_workshop.mp3" },
+  { "id": "horizon", "title": "Horizon", "mood": "Кинематографичный", "genre": "эмбиент", "bpm": 100, "file": "horizon.mp3" }
+]

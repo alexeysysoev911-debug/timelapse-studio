@@ -9,11 +9,13 @@ import { useStore } from "../store";
 import type { Clip } from "../types";
 import { Thumb } from "./Thumb";
 
+const NO_TRACKS: import("../types").BuiltinTrack[] = [];
+
 function ClipRow({ clip, index }: { clip: Clip; index: number }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: clip.id });
   const item = useStore((s) => s.media[clip.path]);
   const selected = useStore((s) => s.selectedClip === clip.id);
-  const update = useStore((s) => s.update);
+  const update = useStore((s) => s.edit);
   const info = item?.info;
   const d = clipDur(clip, info);
   const trimmed = clip.trim_start > 0 || clip.trim_end != null;
@@ -30,7 +32,7 @@ function ClipRow({ clip, index }: { clip: Clip; index: number }) {
       <span className="idx">{index + 1}</span>
       {info ? <Thumb path={clip.path} at={Math.min(1, info.duration / 3)} width={160} /> : <div className="thumb broken"><AlertTriangle size={14} /></div>}
       <div className="clip-meta">
-        <div className="name" title={clip.path}>
+        <div className="name" data-tip={clip.path}>
           {baseName(clip.path)}
         </div>
         <div className="sub">
@@ -44,7 +46,7 @@ function ClipRow({ clip, index }: { clip: Clip; index: number }) {
               </span>
             </>
           ) : item ? (
-            <span className="err" title={item.error ?? ""}>
+            <span className="err" data-tip={item.error ?? ""}>
               не читается — будет пропущен
             </span>
           ) : (
@@ -55,7 +57,7 @@ function ClipRow({ clip, index }: { clip: Clip; index: number }) {
       <div className="row-actions">
         <button
           className="icon"
-          title={clip.enabled ? "Не использовать в ролике" : "Использовать"}
+          data-tip={clip.enabled ? "Не использовать в ролике" : "Использовать"}
           onClick={(e) => {
             e.stopPropagation();
             update((p) => {
@@ -68,7 +70,7 @@ function ClipRow({ clip, index }: { clip: Clip; index: number }) {
         </button>
         <button
           className="icon"
-          title="Убрать из проекта (файл не удаляется)"
+          data-tip="Убрать из проекта (файл не удаляется)"
           onClick={(e) => {
             e.stopPropagation();
             update((p) => {
@@ -87,8 +89,10 @@ export function Library() {
   const clips = useStore((s) => s.project.clips);
   const photos = useStore((s) => s.project.end_photos);
   const tracks = useStore((s) => s.project.music.tracks);
+  const builtin = useStore((s) => s.appInfo?.builtin_music ?? NO_TRACKS);
+  const trackName = (t: string) => builtin.find((b) => b.token === t)?.title ?? baseName(t);
   const media = useStore((s) => s.media);
-  const update = useStore((s) => s.update);
+  const update = useStore((s) => s.edit);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -143,11 +147,11 @@ export function Library() {
       ) : (
         <div className="photo-grid">
           {photos.map((ph) => (
-            <figure key={ph} className={media[ph] && !media[ph].info ? "bad" : ""} title={baseName(ph)}>
+            <figure key={ph} className={media[ph] && !media[ph].info ? "bad" : ""} data-tip={baseName(ph)}>
               <Thumb path={ph} width={200} />
               <button
                 className="icon over"
-                title="Убрать"
+                data-tip="Убрать"
                 onClick={() =>
                   update((p) => {
                     p.end_photos = p.end_photos.filter((x) => x !== ph);
@@ -170,19 +174,19 @@ export function Library() {
         </button>
       </div>
       {tracks.length === 0 ? (
-        <p className="empty">Без музыки ролик будет беззвучным. Несколько треков — каждый раз случайный.</p>
+        <p className="empty">Без музыки ролик будет беззвучным. Встроенные треки — на вкладке «Музыка» справа.</p>
       ) : (
         <ul className="track-list">
           {tracks.map((t) => (
             <li key={t} className={media[t] && !media[t].info ? "bad" : ""}>
               <Music2 size={13} />
-              <span className="name" title={t}>
-                {baseName(t)}
+              <span className="name" data-tip={t.startsWith("builtin:") ? "Встроенный трек программы" : t}>
+                {trackName(t)}
               </span>
               <span className="dim">{media[t]?.info ? fmtSec(media[t].info!.duration) : media[t] ? "не читается" : ""}</span>
               <button
                 className="icon"
-                title="Убрать"
+                data-tip="Убрать"
                 onClick={() =>
                   update((p) => {
                     p.music.tracks = p.music.tracks.filter((x) => x !== t);

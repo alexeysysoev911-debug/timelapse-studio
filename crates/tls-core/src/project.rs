@@ -8,6 +8,8 @@ pub const SCHEMA_VERSION: u32 = 1;
 #[serde(default)]
 pub struct Project {
     pub schema: u32,
+    /// Идентификатор в библиотеке проектов (пусто — ещё не сохранён в библиотеку).
+    pub id: String,
     pub name: String,
     pub clips: Vec<Clip>,
     pub end_photos: Vec<PathBuf>,
@@ -26,6 +28,7 @@ impl Default for Project {
     fn default() -> Self {
         Project {
             schema: SCHEMA_VERSION,
+            id: String::new(),
             name: "Новый проект".into(),
             clips: vec![],
             end_photos: vec![],
@@ -170,8 +173,20 @@ pub enum FitMode {
 pub struct Style {
     pub fit: FitMode,
     pub blur_sigma: f64,
-    /// none / warm / cool / vivid / cinema / sharp
+    /// Устаревшее поле (версии до 3.1): переносится в `look` при загрузке.
     pub color_filter: String,
+    /// Цветовой «образ» (LUT): none / vivid / warm_film / ... (см. looks::LOOKS)
+    pub look: String,
+    /// Сила образа 0..1.
+    pub look_strength: f64,
+    /// Автокоррекция уровней и баланса.
+    pub auto_color: bool,
+    /// Повышение чёткости.
+    pub sharpen: bool,
+    /// Шрифт плашки и ника (id встроенного шрифта).
+    pub font_family: String,
+    /// Шрифт хука.
+    pub hook_font_family: String,
     pub info_overlay: bool,
     /// Положение плашки (0..1 высоты кадра — верх плашки).
     pub info_pos: f64,
@@ -200,6 +215,12 @@ impl Default for Style {
             fit: FitMode::Blur,
             blur_sigma: 25.0,
             color_filter: "none".into(),
+            look: "none".into(),
+            look_strength: 1.0,
+            auto_color: false,
+            sharpen: false,
+            font_family: "montserrat".into(),
+            hook_font_family: "unbounded".into(),
             info_overlay: true,
             info_pos: 0.78,
             show_time: true,
@@ -385,11 +406,24 @@ impl Project {
         if !(s.accent_color.len() == 6 && s.accent_color.chars().all(|c| c.is_ascii_hexdigit())) {
             s.accent_color = "FFC857".into();
         }
-        if !crate::graph::COLOR_FILTERS
-            .iter()
-            .any(|(k, _)| *k == s.color_filter)
-        {
-            s.color_filter = "none".into();
+        // перенос фильтров версий до 3.1 в LUT-образы
+        match s.color_filter.as_str() {
+            "warm" if s.look == "none" => s.look = "warm_film".into(),
+            "cool" if s.look == "none" => s.look = "cool_tech".into(),
+            "vivid" if s.look == "none" => s.look = "vivid".into(),
+            "cinema" if s.look == "none" => s.look = "teal_orange".into(),
+            "sharp" => s.sharpen = true,
+            _ => {}
+        }
+        s.color_filter = "none".into();
+        if !crate::looks::LOOKS.iter().any(|(k, _)| *k == s.look) {
+            s.look = "none".into();
+        }
+        s.look_strength = clamp(s.look_strength, 0.0, 1.0, 1.0);
+        for f in [&mut s.font_family, &mut s.hook_font_family] {
+            if !crate::looks::FONTS.iter().any(|(k, _, _)| *k == f.as_str()) {
+                *f = "montserrat".into();
+            }
         }
         for c in &mut self.clips {
             c.trim_start = clamp(c.trim_start, 0.0, 1e7, 0.0);

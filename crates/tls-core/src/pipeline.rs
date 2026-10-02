@@ -26,7 +26,7 @@ pub enum Event {
     Warning { text: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
     pub cache_dir: PathBuf,
     /// Папка по умолчанию, если у формата не задана своя.
@@ -36,6 +36,41 @@ pub struct BuildOptions {
     pub draft_seconds: Option<f64>,
     /// Зерно случайности (выбор трека/места) — для воспроизводимости тестов.
     pub seed: Option<u64>,
+    /// Встроенные ресурсы программы (музыка, LUT, шрифты).
+    pub resources: crate::looks::Resources,
+    /// Слои текста от интерфейса: id формата → PNG.
+    pub overlays: std::collections::HashMap<String, crate::graph::OverlayImages>,
+}
+
+/// Шрифт: явно заданный → свой файл пользователя → встроенный выбранный → системный.
+fn pick_font(opts: &BuildOptions, p: &Project) -> Option<PathBuf> {
+    opts.font
+        .clone()
+        .filter(|f| f.is_file())
+        .or_else(|| p.style.font.clone().filter(|f| f.is_file()))
+        .or_else(|| opts.resources.font_file(&p.style.font_family))
+        .or_else(find_system_font)
+}
+
+/// Таблица LUT выбранного образа с учётом силы.
+fn lut_for(opts: &BuildOptions, p: &Project, warnings: &mut Vec<String>) -> Option<String> {
+    if p.style.look == "none" || p.style.look_strength <= 0.001 {
+        return None;
+    }
+    let Some(file) = opts.resources.lut_file(&p.style.look) else {
+        warnings.push("Файл цветового образа не найден — собираю без него.".into());
+        return None;
+    };
+    match std::fs::read_to_string(&file)
+        .map_err(Error::from)
+        .and_then(|src| crate::looks::blend_cube(&src, p.style.look_strength))
+    {
+        Ok(c) => Some(c),
+        Err(e) => {
+            warnings.push(format!("Цветовой образ не применён: {e}"));
+            None
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -409,7 +444,7 @@ pub fn build(
     }
     let mut music: Option<(MediaInfo, f64)> = None;
     for t in &tracks {
-        match probe(tools, t) {
+        match probe(tools, &opts.resources.resolve(t)) {
             Ok(i) if i.has_audio && i.duration > 1.0 => {
                 let off = match p.music.offset {
                     Some(o) if o < i.duration - 1.0 => o,
@@ -455,12 +490,8 @@ pub fn build(
     let paths: Vec<&Path> = clips.iter().map(|c| c.info.path.as_path()).collect();
     let it = info_text(p, &paths);
     let texts = texts_for(p, &it);
-    let font = opts
-        .font
-        .clone()
-        .filter(|f| f.is_file())
-        .or_else(|| p.style.font.clone().filter(|f| f.is_file()))
-        .or_else(find_system_font);
+    let font = pick_font(opts, p);
+    let lut = lut_for(opts, p, &mut warnings);
 
     // ---- место на диске ----
     if draft.is_none() {
@@ -556,6 +587,9 @@ pub fn build(
             fps: p.export.fps,
             draft: draft.map(|d| (d, 0.5)),
             audio: true,
+            lut: lut.clone(),
+            overlay: opts.overlays.get(&t.id),
+            bare: false,
         });
         // стабилизационные файлы лежат в общей рабочей папке — копируем в папку формата
         for c in &clips {
@@ -786,16 +820,33 @@ fn out_dir(t: &Target, opts: &BuildOptions) -> PathBuf {
     }
 }
 
-/// Кадр будущего ролика со всем оформлением (без музыки и стабилизации) — быстрый предпросмотр.
+/// Параметры кадра предпросмотра.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct PreviewOptions {
+    /// Момент ролика, сек (по умолчанию — середина показа хука).
+    pub at: Option<f64>,
+    /// «Чистый» кадр без текста/лого/полосы — подложка живого предпросмотра.
+    pub bare: bool,
+    /// Подменить образ (например, "none" для сравнения «до»).
+    pub look_override: Option<String>,
+    /// Масштаб относительно размера формата (по умолчанию 0.5).
+    pub scale: Option<f64>,
+}
+
+/// Кадр будущего ролика (без музыки и стабилизации) — быстрый предпросмотр.
 pub fn preview_frame(
     tools: &Tools,
     project: &Project,
     opts: &BuildOptions,
     target_id: &str,
-    at: Option<f64>,
+    po: &PreviewOptions,
 ) -> Result<(PathBuf, Vec<String>)> {
     let mut project = project.clone();
     project.sanitize();
+    if let Some(l) = &po.look_override {
+        project.style.look = l.clone();
+    }
     let p = &project;
     let target = p
         .targets
@@ -812,20 +863,23 @@ pub fn preview_frame(
         .iter()
         .filter_map(|ph| probe(tools, ph).ok())
         .collect();
-    let watermark = p
-        .style
-        .watermark
-        .as_ref()
-        .and_then(|w| probe(tools, w).ok());
+    let watermark = if po.bare {
+        None
+    } else {
+        p.style
+            .watermark
+            .as_ref()
+            .and_then(|w| probe(tools, w).ok())
+    };
     let paths: Vec<&Path> = clips.iter().map(|c| c.info.path.as_path()).collect();
     let it = info_text(p, &paths);
-    let texts = texts_for(p, &it);
-    let font = opts
-        .font
-        .clone()
-        .filter(|f| f.is_file())
-        .or_else(|| p.style.font.clone().filter(|f| f.is_file()))
-        .or_else(find_system_font);
+    let texts = if po.bare {
+        Texts::default()
+    } else {
+        texts_for(p, &it)
+    };
+    let font = pick_font(opts, p);
+    let lut = lut_for(opts, p, &mut warnings);
     let caps = tools.capabilities();
     let mut pp = p.clone();
     pp.style.photo_zoom = false;
@@ -841,8 +895,15 @@ pub fn preview_frame(
         caps: &caps,
         target: &target,
         fps: p.export.fps,
-        draft: Some((f64::MAX, 0.5)),
+        draft: Some((f64::MAX, po.scale.unwrap_or(0.5).clamp(0.1, 1.0))),
         audio: false,
+        lut,
+        overlay: if po.bare {
+            None
+        } else {
+            opts.overlays.get(&target.id)
+        },
+        bare: po.bare,
     });
     warnings.extend(plan.warnings.iter().cloned());
     std::fs::create_dir_all(&opts.cache_dir)?;
@@ -850,7 +911,8 @@ pub fn preview_frame(
         .prefix("frame-")
         .tempdir_in(&opts.cache_dir)?;
     crate::render::materialize(&plan.files, work.path())?;
-    let t = at
+    let t = po
+        .at
         .unwrap_or_else(|| (p.style.hook_seconds * 0.5).min(plan.total * 0.3))
         .clamp(0.0, (plan.total - 0.05).max(0.0));
     let out = opts.cache_dir.join(format!("frame-{}.png", rng_name()));
@@ -872,4 +934,51 @@ pub fn preview_frame(
         });
     }
     Ok((out, warnings))
+}
+
+/// Миниатюры всех образов на одном кадре (для выбора фильтра «как в Instagram»).
+pub fn look_thumbnails(
+    tools: &Tools,
+    base: &Path,
+    res: &crate::looks::Resources,
+    out_dir: &Path,
+    width: u32,
+) -> Result<Vec<(String, PathBuf)>> {
+    std::fs::create_dir_all(out_dir)?;
+    let stem = base
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("frame")
+        .to_string();
+    let mut out = vec![];
+    for (id, _) in crate::looks::LOOKS {
+        let dst = out_dir.join(format!("{stem}-{id}.png"));
+        if !dst.is_file() {
+            let mut c = tools.ffmpeg_cmd();
+            c.args(["-v", "error", "-y", "-i"]).arg(base);
+            let vf = match res.lut_file(id) {
+                Some(f) => {
+                    // файл LUT по имени, ffmpeg запускается в папке LUT — без экранирования путей
+                    c.current_dir(f.parent().unwrap_or(Path::new(".")));
+                    format!(
+                        "scale={width}:-2,format=gbrp,lut3d=file={}:interp=tetrahedral",
+                        f.file_name().unwrap_or_default().to_string_lossy()
+                    )
+                }
+                None => format!("scale={width}:-2"),
+            };
+            c.args(["-vf", &vf, "-frames:v", "1", "-update", "1"])
+                .arg(&dst);
+            let o = crate::tools::run_with_timeout(
+                c,
+                std::time::Duration::from_secs(30),
+                "миниатюра образа",
+            )?;
+            if !o.ok() {
+                continue;
+            }
+        }
+        out.push((id.to_string(), dst));
+    }
+    Ok(out)
 }

@@ -84,6 +84,19 @@ pub struct PlanInput<'a> {
     pub draft: Option<(f64, f64)>,
     /// false — только видео (кадр предпросмотра).
     pub audio: bool,
+    /// Готовая таблица LUT (.cube, сила уже учтена).
+    pub lut: Option<String>,
+    /// Слои текста, нарисованные интерфейсом (PNG во весь кадр). Если есть — drawtext не используется.
+    pub overlay: Option<&'a OverlayImages>,
+    /// «Чистый» кадр: без текста, лого, полосы прогресса (подложка живого предпросмотра).
+    pub bare: bool,
+}
+
+/// PNG-слои во весь кадр формата: постоянный (плашка, ник) и хук (первые секунды).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct OverlayImages {
+    pub static_png: Option<Vec<u8>>,
+    pub hook_png: Option<Vec<u8>>,
 }
 
 fn f(v: f64) -> String {
@@ -415,13 +428,95 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
         let _ = write!(fc, "[{cur}]{filt}[{out}];");
         *cur = out;
     };
-    if let Some((_, cf)) = COLOR_FILTERS.iter().find(|(k, _)| *k == st.color_filter) {
-        if !cf.is_empty() {
-            chain(&mut fc, cf, &mut cur);
+    // цвет: автокоррекция → образ (LUT) → чёткость
+    if st.auto_color && caps.has_filter("normalize") {
+        chain(
+            &mut fc,
+            "normalize=blackpt=black:whitept=white:smoothing=24:independence=0.5:strength=0.6",
+            &mut cur,
+        );
+    }
+    if let Some(cube) = &inp.lut {
+        files.push(WorkFile::Write {
+            name: "look.cube".into(),
+            data: cube.as_bytes().to_vec(),
+        });
+        chain(
+            &mut fc,
+            "format=gbrp,lut3d=file=look.cube:interp=tetrahedral,format=yuv420p",
+            &mut cur,
+        );
+    }
+    if st.sharpen {
+        chain(&mut fc, "unsharp=5:5:0.7:5:5:0.0", &mut cur);
+    }
+
+    // слои текста от интерфейса (точно как в предпросмотре, с эмодзи и любыми шрифтами)
+    if let (Some(ov), false) = (inp.overlay, inp.bare) {
+        if let Some(png) = &ov.static_png {
+            files.push(WorkFile::Write {
+                name: "overlay_static.png".into(),
+                data: png.clone(),
+            });
+            args.extend(
+                [
+                    "-loop",
+                    "1",
+                    "-framerate",
+                    &fps.to_string(),
+                    "-t",
+                    &f(total + 1.0),
+                    "-i",
+                    "overlay_static.png",
+                ]
+                .iter()
+                .map(|s| s.to_string()),
+            );
+            let idx = next;
+            next += 1;
+            let _ = write!(fc, "[{idx}:v]scale={w}:{h},format=rgba[ovs];");
+            chain(
+                &mut fc,
+                "null[ovb];[ovb][ovs]overlay=0:0:format=auto",
+                &mut cur,
+            );
+        }
+        let hs = st.hook_seconds.min(total);
+        if let (Some(png), true) = (&ov.hook_png, hs > 0.0) {
+            files.push(WorkFile::Write {
+                name: "overlay_hook.png".into(),
+                data: png.clone(),
+            });
+            args.extend(
+                [
+                    "-loop",
+                    "1",
+                    "-framerate",
+                    &fps.to_string(),
+                    "-t",
+                    &f(hs + 0.5),
+                    "-i",
+                    "overlay_hook.png",
+                ]
+                .iter()
+                .map(|s| s.to_string()),
+            );
+            let idx = next;
+            let _ = write!(
+                fc,
+                "[{idx}:v]scale={w}:{h},format=rgba,fade=t=out:st={st}:d=0.3:alpha=1[ovh];",
+                st = f((hs - 0.3).max(0.0))
+            );
+            chain(
+                &mut fc,
+                &format!("null[ovhb];[ovhb][ovh]overlay=0:0:format=auto:eof_action=pass:enable='between(t,0,{})'", f(hs)),
+                &mut cur,
+            );
         }
     }
 
-    let font_name = inp.font.as_ref().map(|fp| {
+    let use_drawtext = inp.overlay.is_none() && !inp.bare;
+    let font_name = inp.font.as_ref().filter(|_| use_drawtext).map(|fp| {
         let ext = fp
             .extension()
             .and_then(|e| e.to_str())
@@ -437,7 +532,7 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
     let has_text = !inp.texts.info_lines.is_empty()
         || !inp.texts.hook.trim().is_empty()
         || !inp.texts.channel.trim().is_empty();
-    if has_text && font_name.is_none() {
+    if has_text && use_drawtext && font_name.is_none() {
         warnings.push("Не найден шрифт — текст на видео пропущен.".into());
     }
     if let Some(font) = &font_name {
@@ -568,7 +663,7 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
     }
 
     // прогресс-бар (overlay с покадровым x)
-    if st.progress_bar && total > 0.0 {
+    if st.progress_bar && total > 0.0 && !inp.bare {
         let bh = ((h as f64 * 0.008).round() as u32).max(4);
         step += 1;
         let out = format!("g{step}");
@@ -583,7 +678,7 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
     }
 
     // бесшовный луп: начало ролика проявляется поверх концовки
-    if st.seamless_loop && inp.draft.is_none() {
+    if st.seamless_loop && inp.draft.is_none() && !inp.bare {
         let d = (total * 0.3).min(0.6);
         if d > 0.05 {
             step += 1;
@@ -753,6 +848,9 @@ mod tests {
             fps: 30,
             draft: None,
             audio: true,
+            lut: None,
+            overlay: None,
+            bare: false,
         })
     }
 

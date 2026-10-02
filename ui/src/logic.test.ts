@@ -59,7 +59,8 @@ describe("logic", () => {
     expect(preflight(p, {})[0]).toContain("Добавьте");
     p.clips = [{ id: "1", path: "a", enabled: true, trim_start: 0, trim_end: null }];
     p.style.hook_text = "Огонь 🔥";
-    expect(preflight(p, { a: info("a", "video") }).some((w) => w.includes("Эмодзи"))).toBe(true);
+    // эмодзи теперь поддерживаются (текст рисует интерфейс) — предупреждения нет
+    expect(preflight(p, { a: info("a", "video") })).toEqual([]);
   });
 });
 
