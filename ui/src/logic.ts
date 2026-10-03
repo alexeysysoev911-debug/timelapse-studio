@@ -127,8 +127,6 @@ export function preflight(p: Project, media: Record<string, ProbeItem>): string[
   if (!active.length) w.push("Добавьте хотя бы один клип.");
   if (active.some((c) => media[c.path] && !media[c.path].info)) w.push("Некоторые клипы не читаются — они будут пропущены.");
   if (!p.targets.some((t) => t.enabled)) w.push("Выберите хотя бы один формат на вкладке «Экспорт».");
-  if (/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(p.style.hook_text + p.style.channel_text + p.info.title))
-    w.push("Эмодзи в тексте на видео не отображаются шрифтом — они будут убраны (в описании поста их можно оставить).");
   const est = estimate(p, media);
   if (est.total > 0 && p.targets.some((t) => t.enabled && t.height > t.width) && est.total > 180)
     w.push(`Ролик получится ${fmtSec(est.total)} — для Reels и Shorts лучше до 3 минут.`);

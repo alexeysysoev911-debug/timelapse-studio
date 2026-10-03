@@ -3,6 +3,7 @@ pub mod beats;
 pub mod encoder;
 pub mod error;
 pub mod graph;
+pub mod looks;
 pub mod pipeline;
 pub mod probe;
 pub mod project;

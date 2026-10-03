@@ -9,13 +9,13 @@ use tls_core::probe::{kind_by_ext, MediaInfo, MediaKind};
 use tls_core::project::{AfterAction, Project};
 use tls_core::render::Cancel;
 
-type CmdResult<T> = Result<T, tls_core::Error>;
+pub(crate) type CmdResult<T> = Result<T, tls_core::Error>;
 
-fn err(e: impl std::fmt::Display) -> tls_core::Error {
+pub(crate) fn err(e: impl std::fmt::Display) -> tls_core::Error {
     tls_core::Error::Invalid(e.to_string())
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> CmdResult<T> + Send + 'static,
 ) -> CmdResult<T> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(err)?
@@ -30,6 +30,10 @@ pub struct AppInfo {
     data_dir: PathBuf,
     log_dir: PathBuf,
     building: bool,
+    builtin_music: Vec<crate::extra::BuiltinTrack>,
+    looks: Vec<(String, String)>,
+    fonts_dir: Option<PathBuf>,
+    update_endpoint_default: String,
 }
 
 #[tauri::command]
@@ -45,6 +49,13 @@ pub async fn app_info(app: AppHandle) -> CmdResult<AppInfo> {
             data_dir: st.dirs.data.clone(),
             log_dir: st.dirs.logs.clone(),
             building: st.job.lock().map(|j| j.is_some()).unwrap_or(false),
+            builtin_music: crate::extra::builtin_tracks(&st),
+            looks: tls_core::looks::LOOKS
+                .iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect(),
+            fonts_dir: st.res.fonts_dir.clone(),
+            update_endpoint_default: crate::extra::DEFAULT_UPDATE_ENDPOINT.into(),
         };
         Ok(info)
     })
@@ -52,7 +63,7 @@ pub async fn app_info(app: AppHandle) -> CmdResult<AppInfo> {
 }
 
 /// Разрешить интерфейсу показывать эти файлы (видео/картинки) через asset-протокол.
-fn allow(app: &AppHandle, paths: &[PathBuf]) {
+pub(crate) fn allow(app: &AppHandle, paths: &[PathBuf]) {
     let scope = app.asset_protocol_scope();
     for p in paths {
         let _ = scope.allow_file(p);
@@ -75,10 +86,9 @@ pub struct ProbeItem {
 #[tauri::command]
 pub async fn probe_files(app: AppHandle, paths: Vec<PathBuf>) -> CmdResult<Vec<ProbeItem>> {
     blocking(move || {
-        let tools = app
-            .state::<AppState>()
-            .tools()
-            .map_err(tls_core::Error::ToolMissing)?;
+        let st = app.state::<AppState>();
+        let tools = st.tools().map_err(tls_core::Error::ToolMissing)?;
+        let res = st.res.clone();
         allow(&app, &paths);
         // параллельно, но не больше 4 ffprobe одновременно
         let chunks: Vec<Vec<PathBuf>> = paths
@@ -90,12 +100,15 @@ pub async fn probe_files(app: AppHandle, paths: Vec<PathBuf>) -> CmdResult<Vec<P
                 .into_iter()
                 .map(|chunk| {
                     let tools = tools.clone();
+                    let res = res.clone();
                     s.spawn(move || {
                         chunk
                             .into_iter()
                             .map(|p| {
-                                let kind = kind_by_ext(&p);
-                                match tls_core::probe::probe(&tools, &p) {
+                                // «builtin:...» — встроенный трек; в ответе оставляем исходное имя
+                                let real = res.resolve(&p);
+                                let kind = kind_by_ext(&real);
+                                match tls_core::probe::probe(&tools, &real) {
                                     Ok(i) => ProbeItem {
                                         path: p,
                                         kind: i.kind,
@@ -179,13 +192,48 @@ pub async fn thumbnail(app: AppHandle, path: PathBuf, at: f64, width: u32) -> Cm
     .await
 }
 
-fn build_opts(st: &AppState, draft: Option<f64>) -> BuildOptions {
+/// Слой текста от интерфейса: PNG в base64 (data URL или чистый base64).
+#[derive(serde::Deserialize, Default, Clone)]
+#[serde(default)]
+pub struct OverlayPayload {
+    static_png: Option<String>,
+    hook_png: Option<String>,
+}
+
+fn decode_png(s: &Option<String>) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let s = s.as_ref()?;
+    let b64 = s.split_once(',').map(|x| x.1).unwrap_or(s);
+    base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .ok()
+}
+
+pub(crate) fn build_opts(
+    st: &AppState,
+    draft: Option<f64>,
+    overlays: Option<std::collections::HashMap<String, OverlayPayload>>,
+) -> BuildOptions {
     BuildOptions {
         cache_dir: st.dirs.cache.clone(),
         default_out_dir: st.out_dir(),
         font: None,
         draft_seconds: draft,
         seed: None,
+        resources: st.res.clone(),
+        overlays: overlays
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    tls_core::graph::OverlayImages {
+                        static_png: decode_png(&v.static_png),
+                        hook_png: decode_png(&v.hook_png),
+                    },
+                )
+            })
+            .collect(),
     }
 }
 
@@ -200,7 +248,8 @@ pub async fn preview_frame(
     app: AppHandle,
     project: Project,
     target_id: String,
-    at: Option<f64>,
+    options: tls_core::pipeline::PreviewOptions,
+    overlays: Option<std::collections::HashMap<String, OverlayPayload>>,
 ) -> CmdResult<Frame> {
     blocking(move || {
         let st = app.state::<AppState>();
@@ -208,9 +257,9 @@ pub async fn preview_frame(
         let (path, warnings) = tls_core::pipeline::preview_frame(
             &tools,
             &project,
-            &build_opts(&st, None),
+            &build_opts(&st, None, overlays),
             &target_id,
-            at,
+            &options,
         )?;
         allow(&app, std::slice::from_ref(&path));
         Ok(Frame { path, warnings })
@@ -233,7 +282,12 @@ enum Done {
 
 /// Запуск сборки в фоне. События: `build-event` (Event), итог: `build-done`.
 #[tauri::command]
-pub fn start_build(app: AppHandle, project: Project, draft_seconds: Option<f64>) -> CmdResult<()> {
+pub fn start_build(
+    app: AppHandle,
+    project: Project,
+    draft_seconds: Option<f64>,
+    overlays: Option<std::collections::HashMap<String, OverlayPayload>>,
+) -> CmdResult<()> {
     let st = app.state::<AppState>();
     let tools = st.tools().map_err(tls_core::Error::ToolMissing)?;
     let cancel = Cancel::new();
@@ -258,7 +312,7 @@ pub fn start_build(app: AppHandle, project: Project, draft_seconds: Option<f64>)
             };
         }
     }
-    let opts = build_opts(&st, draft_seconds);
+    let opts = build_opts(&st, draft_seconds, overlays);
     let app2 = app.clone();
     std::thread::Builder::new()
         .name("build".into())
@@ -378,21 +432,6 @@ fn remember_recent(st: &AppState, path: &Path) {
         &st.settings_path(),
         &serde_json::to_vec_pretty(&s).unwrap_or_default(),
     );
-}
-
-#[tauri::command]
-pub fn autosave_load(app: AppHandle) -> Option<Project> {
-    let st = app.state::<AppState>();
-    let p = Project::load(&st.dirs.data.join("autosave.tlsproj")).ok()?;
-    let mut files: Vec<PathBuf> = p.clips.iter().map(|c| c.path.clone()).collect();
-    files.extend(p.end_photos.iter().cloned());
-    allow(&app, &files);
-    Some(p)
-}
-
-#[tauri::command]
-pub fn autosave_store(st: State<AppState>, project: Project) -> CmdResult<()> {
-    project.save(&st.dirs.data.join("autosave.tlsproj"))
 }
 
 #[tauri::command]

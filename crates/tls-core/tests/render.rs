@@ -199,7 +199,13 @@ fn opts(out: &Path) -> BuildOptions {
         font: None,
         draft_seconds: None,
         seed: Some(42),
+        resources: tls_core::looks::Resources::from_root(&resources_root()),
+        ..Default::default()
     }
+}
+
+fn resources_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src-tauri/resources")
 }
 
 fn clip(p: &Path) -> Clip {
@@ -545,8 +551,119 @@ fn preview_frame_works() {
     p.clips = files.iter().map(|f| clip(f)).collect();
     p.style.hook_text = "Проверка".into();
     let out = tempfile::tempdir().unwrap();
-    let (jpg, _) =
-        tls_core::pipeline::preview_frame(&tools(), &p, &opts(out.path()), "vertical", None)
-            .unwrap();
+    let (jpg, _) = tls_core::pipeline::preview_frame(
+        &tools(),
+        &p,
+        &opts(out.path()),
+        "vertical",
+        &tls_core::pipeline::PreviewOptions::default(),
+    )
+    .unwrap();
     assert!(jpg.is_file());
+}
+
+/// Образ (LUT) с силой, автокоррекция, чёткость, встроенная музыка и встроенный шрифт.
+#[test]
+fn looks_builtin_music_and_fonts() {
+    let (_s, files) = copy_set(&["a_1080.mp4"]);
+    let mut p = Project::default();
+    p.clips = vec![clip(&files[0])];
+    p.speed = Speed::None;
+    p.targets = vec![Target::vertical()];
+    p.style.look = "teal_orange".into();
+    p.style.look_strength = 0.6;
+    p.style.auto_color = true;
+    p.style.sharpen = true;
+    p.style.font_family = "unbounded".into();
+    p.style.hook_text = "Проверка шрифта".into();
+    p.music.tracks = vec!["builtin:lofi_workshop".into()];
+    let out = tempfile::tempdir().unwrap();
+    let rep = build(&tools(), &p, &opts(out.path()), &Cancel::new(), &|_| {}).unwrap();
+    assert!(rep.all_ok, "{rep:?}");
+    assert!(rep.music.as_ref().unwrap().ends_with("lofi_workshop.mp3"));
+    assert!(
+        !rep.warnings.iter().any(|w| w.contains("образ")),
+        "{:?}",
+        rep.warnings
+    );
+    // все образы рендерятся
+    for (id, _) in tls_core::looks::LOOKS {
+        let mut q = p.clone();
+        q.style.look = id.to_string();
+        let o = tempfile::tempdir().unwrap();
+        let po = tls_core::pipeline::PreviewOptions {
+            bare: true,
+            ..Default::default()
+        };
+        tls_core::pipeline::preview_frame(&tools(), &q, &opts(o.path()), "vertical", &po)
+            .unwrap_or_else(|e| panic!("{id}: {e}"));
+    }
+}
+
+/// Слои текста от интерфейса накладываются точно в кадр; хук исчезает после своего времени.
+#[test]
+fn overlay_layers_are_composited() {
+    let (_s, files) = copy_set(&["a_1080.mp4"]);
+    let dir = tempfile::tempdir().unwrap();
+    let mk = |name: &str, color: &str, x: u32| {
+        let p = dir.path().join(name);
+        ff(&[
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("color=c={color}:s=200x200,format=rgba"),
+            "-vf",
+            &format!("pad=1920:1080:{x}:100:color=black@0"),
+            "-frames:v",
+            "1",
+            p.to_str().unwrap(),
+        ]);
+        std::fs::read(p).unwrap()
+    };
+    let mut p = Project::default();
+    p.clips = vec![clip(&files[0])];
+    p.speed = Speed::None;
+    p.targets = vec![Target::landscape()];
+    p.style.hook_seconds = 1.0;
+    p.style.info_overlay = false;
+    p.export.cover = false;
+    let out = tempfile::tempdir().unwrap();
+    let mut o = opts(out.path());
+    o.overlays.insert(
+        "landscape".into(),
+        tls_core::graph::OverlayImages {
+            static_png: Some(mk("s.png", "magenta", 100)),
+            hook_png: Some(mk("h.png", "blue", 1500)),
+        },
+    );
+    let rep = build(&tools(), &p, &o, &Cancel::new(), &|_| {}).unwrap();
+    let v = rep.outputs[0].path.clone().unwrap();
+    let red = frame_rgb(&v, 2.5, 200, 200);
+    assert!(
+        red[0] > 200 && red[1] < 60 && red[2] > 200,
+        "постоянный слой {red:?}"
+    );
+    let blue_early = frame_rgb(&v, 0.3, 1600, 200);
+    assert!(
+        blue_early[2] > 200 && blue_early[0] < 60 && blue_early[1] < 60,
+        "хук в начале {blue_early:?}"
+    );
+    let blue_late = frame_rgb(&v, 2.5, 1600, 200);
+    assert!(
+        !(blue_late[2] > 200 && blue_late[0] < 60 && blue_late[1] < 60),
+        "хук исчез {blue_late:?}"
+    );
+}
+
+#[test]
+fn old_filters_migrate_to_looks() {
+    let mut p = Project::default();
+    p.style.color_filter = "cinema".into();
+    p.sanitize();
+    assert_eq!(p.style.look, "teal_orange");
+    let mut q = Project::default();
+    q.style.color_filter = "sharp".into();
+    q.sanitize();
+    assert!(q.style.sharpen);
+    assert_eq!(q.style.look, "none");
 }

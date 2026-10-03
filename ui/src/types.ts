@@ -40,6 +40,12 @@ export interface Style {
   fit: FitMode;
   blur_sigma: number;
   color_filter: string;
+  look: string;
+  look_strength: number;
+  auto_color: boolean;
+  sharpen: boolean;
+  font_family: string;
+  hook_font_family: string;
   info_overlay: boolean;
   info_pos: number;
   show_time: boolean;
@@ -79,6 +85,7 @@ export interface Export {
 
 export interface Project {
   schema: number;
+  id: string;
   name: string;
   clips: Clip[];
   end_photos: string[];
@@ -161,6 +168,62 @@ export interface AppInfo {
   data_dir: string;
   log_dir: string;
   building: boolean;
+  builtin_music: BuiltinTrack[];
+  looks: [string, string][];
+  fonts_dir: string | null;
+  update_endpoint_default: string;
+}
+
+export interface BuiltinTrack {
+  id: string;
+  title: string;
+  mood: string;
+  genre: string;
+  bpm: number;
+  path: string;
+  token: string;
+}
+
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  updated: number;
+  clips: number;
+  first_clip: string | null;
+}
+
+export interface LookThumb {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface UpdateInfo {
+  current: string;
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+  date: string | null;
+}
+
+export interface ClipInfoText {
+  title: string;
+  material: string | null;
+  layer: string | null;
+  specs: string;
+  time: string;
+}
+
+export interface PreviewOptions {
+  at?: number | null;
+  bare?: boolean;
+  look_override?: string | null;
+  scale?: number | null;
+}
+
+export interface OverlayPayload {
+  static_png?: string;
+  hook_png?: string;
 }
 
 export interface Settings {
@@ -170,6 +233,9 @@ export interface Settings {
   recent: string[];
   notify: boolean;
   prevent_sleep: boolean;
+  auto_update_check: boolean;
+  update_endpoint: string;
+  last_project: string;
 }
 
 export const TRANSITIONS: [string, string][] = [
@@ -183,13 +249,27 @@ export const TRANSITIONS: [string, string][] = [
   ["zoomin", "Наезд"],
 ];
 
-export const COLOR_FILTERS: [string, string][] = [
-  ["none", "Без фильтра"],
+export const LOOKS: [string, string][] = [
+  ["none", "Без образа"],
   ["vivid", "Сочный"],
-  ["warm", "Тёплый"],
-  ["cool", "Холодный"],
-  ["cinema", "Кино"],
-  ["sharp", "Чёткость +"],
+  ["clean_bright", "Чистый светлый"],
+  ["warm_film", "Тёплая плёнка"],
+  ["golden_hour", "Золотой час"],
+  ["cool_tech", "Холодный tech"],
+  ["teal_orange", "Кино teal & orange"],
+  ["pastel", "Пастель"],
+  ["matte", "Матовый"],
+  ["bw_contrast", "Ч/Б контраст"],
+];
+
+/** Встроенные шрифты (файлы в public/fonts и в ресурсах программы). */
+export const FONTS: { id: string; label: string; file: string; note: string }[] = [
+  { id: "montserrat", label: "Montserrat", file: "Montserrat-Bold.ttf", note: "универсальный, популярный в соцсетях" },
+  { id: "unbounded", label: "Unbounded", file: "Unbounded-Bold.ttf", note: "широкий, модный — для хуков" },
+  { id: "rubik", label: "Rubik", file: "Rubik-Bold.ttf", note: "мягкий, дружелюбный" },
+  { id: "oswald", label: "Oswald", file: "Oswald-Bold.ttf", note: "узкий, плакатный" },
+  { id: "inter", label: "Inter", file: "Inter-Bold.ttf", note: "строгий, хорошо читается" },
+  { id: "ptsans", label: "PT Sans", file: "PTSans-Bold.ttf", note: "классика с отличной кириллицей" },
 ];
 
 export const PROFILES: [string, string, string][] = [
@@ -201,13 +281,14 @@ export const PROFILES: [string, string, string][] = [
   ["other", "Другое", "Что на видео"],
 ];
 
-export function defaultProject(): Project {
+export function defaultProject(builtinTrack?: string): Project {
   return {
     schema: 1,
+    id: "",
     name: "Новый проект",
     clips: [],
     end_photos: [],
-    music: { tracks: [], offset: 0, volume: 1, loudnorm: true, fade_in: 0.3, fade_out: 1.5, beat_sync: true },
+    music: { tracks: builtinTrack ? [builtinTrack] : [], offset: 0, volume: 1, loudnorm: true, fade_in: 0.3, fade_out: 1.5, beat_sync: true },
     speed: { mode: "target", seconds: 20 },
     timelapse: { deflicker: false, stabilize: false, frame_blend: false, hdr_tonemap: true },
     transition: { kind: "fade", duration: 0.4 },
@@ -215,6 +296,12 @@ export function defaultProject(): Project {
       fit: "blur",
       blur_sigma: 25,
       color_filter: "none",
+      look: "none",
+      look_strength: 1,
+      auto_color: false,
+      sharpen: false,
+      font_family: "montserrat",
+      hook_font_family: "unbounded",
       info_overlay: true,
       info_pos: 0.78,
       show_time: true,

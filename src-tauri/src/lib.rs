@@ -1,6 +1,7 @@
 //! Оболочка приложения: команды для интерфейса, фоновые сборки, системная интеграция.
 //! Никакого HTTP-сервера: интерфейс общается с ядром только через IPC Tauri.
 mod commands;
+mod extra;
 mod state;
 mod system;
 
@@ -20,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let state = AppState::init(app.handle())?;
             system::init_logging(&state.dirs.logs);
@@ -44,6 +46,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::quit_after_cancel,
+            extra::projects_list,
+            extra::project_open,
+            extra::project_store,
+            extra::project_delete,
+            extra::project_duplicate,
+            extra::autosave_load,
+            extra::project_info,
+            extra::open_link,
+            extra::look_thumbs,
+            extra::update_check,
+            extra::update_install,
             commands::app_info,
             commands::probe_files,
             commands::list_folder,
@@ -53,8 +66,6 @@ pub fn run() {
             commands::cancel_build,
             commands::load_project,
             commands::save_project,
-            commands::autosave_load,
-            commands::autosave_store,
             commands::settings_load,
             commands::settings_store,
             commands::reveal,

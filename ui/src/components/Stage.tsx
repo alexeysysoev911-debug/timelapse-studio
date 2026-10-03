@@ -2,11 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Film, ImageIcon, RefreshCw, Scissors, Undo2 } from "lucide-react";
 import { fileUrl } from "../api";
-import { renderFrame, startBuild } from "../actions";
+import { loadBase, renderFrame, startBuild } from "../actions";
+import { drawExtras, drawHook, drawPlatformMask, drawStatic, layoutOf, resolveFonts, textModel } from "../overlay";
 import { baseName, clipDur, estimate, fmtSec } from "../logic";
 import { useStore, type PreviewMode } from "../store";
-import { Segmented } from "./controls";
+import { Segmented, Toggle } from "./controls";
 import { Thumb } from "./Thumb";
+
+const ratioLabel = (w: number, h: number) => (h > w ? (h / w > 1.5 ? "9:16" : "4:5") : w === h ? "1:1" : "16:9");
 
 function TrimBar({ duration, start, end, time, onChange, onSeek }: { duration: number; start: number; end: number; time: number; onChange: (s: number, e: number) => void; onSeek: (t: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -37,8 +40,8 @@ function TrimBar({ duration, start, end, time, onChange, onSeek }: { duration: n
     <div className="trimbar" ref={ref} onPointerDown={(e) => onSeek(toTime(e.clientX))} role="group" aria-label="Обрезка клипа">
       <div className="trim-sel" style={{ left: pct(start), width: pct(end - start) }} />
       <div className="playhead" style={{ left: pct(time) }} />
-      <button className="handle" style={{ left: pct(start) }} onPointerDown={drag("s")} aria-label="Начало" title="Начало клипа" />
-      <button className="handle" style={{ left: pct(end) }} onPointerDown={drag("e")} aria-label="Конец" title="Конец клипа" />
+      <button className="handle" style={{ left: pct(start) }} onPointerDown={drag("s")} aria-label="Начало" data-tip="Начало клипа" />
+      <button className="handle" style={{ left: pct(end) }} onPointerDown={drag("e")} aria-label="Конец" data-tip="Конец клипа" />
     </div>
   );
 }
@@ -47,7 +50,7 @@ function ClipPreview() {
   const id = useStore((s) => s.selectedClip);
   const clip = useStore((s) => s.project.clips.find((c) => c.id === id) ?? s.project.clips[0]);
   const item = useStore((s) => (clip ? s.media[clip.path] : undefined));
-  const update = useStore((s) => s.update);
+  const update = useStore((s) => s.edit);
   const vref = useRef<HTMLVideoElement>(null);
   const [time, setTime] = useState(0);
   const [cantPlay, setCantPlay] = useState(false);
@@ -103,18 +106,18 @@ function ClipPreview() {
         <div className="trim">
           <div className="trim-head">
             <Scissors size={14} />
-            <b title={clip.path}>{baseName(clip.path)}</b>
+            <b data-tip={clip.path}>{baseName(clip.path)}</b>
             <span className="dim">
               {fmtSec(clipDur(clip, info))} из {fmtSec(dur)}
             </span>
             <span className="grow" />
-            <button className="btn subtle sm" title="Начало = текущая позиция (I)" onClick={() => setTrim(Math.min(time, end - 0.2), end)}>
+            <button className="btn subtle sm" data-tip="Начало = текущая позиция (I)" onClick={() => setTrim(Math.min(time, end - 0.2), end)}>
               [ Начало здесь
             </button>
-            <button className="btn subtle sm" title="Конец = текущая позиция (O)" onClick={() => setTrim(start, Math.max(time, start + 0.2))}>
+            <button className="btn subtle sm" data-tip="Конец = текущая позиция (O)" onClick={() => setTrim(start, Math.max(time, start + 0.2))}>
               Конец здесь ]
             </button>
-            <button className="btn subtle sm" title="Сбросить обрезку" onClick={() => setTrim(0, dur)} disabled={start === 0 && clip.trim_end == null}>
+            <button className="btn subtle sm" data-tip="Сбросить обрезку" onClick={() => setTrim(0, dur)} disabled={start === 0 && clip.trim_end == null}>
               <Undo2 size={14} />
             </button>
           </div>
@@ -125,15 +128,177 @@ function ClipPreview() {
   );
 }
 
-function FramePreview() {
+function LivePreview() {
+  const project = useStore((s) => s.project);
+  const info = useStore((s) => s.info);
+  const base = useStore((s) => s.base);
+  const baseLoading = useStore((s) => s.baseLoading);
+  const target = useStore((s) => s.previewTarget);
+  const showPlatform = useStore((s) => s.showPlatform);
+  const compare = useStore((s) => s.compare);
+  const previewAt = useStore((s) => s.previewAt);
   const frame = useStore((s) => s.frame);
   const stage = useStore((s) => s.stage);
+  const media = useStore((s) => s.media);
+  const set = useStore((s) => s.set);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [split, setSplit] = useState(0.5);
+  const [showExact, setShowExact] = useState(false);
+  const imgs = useRef<{ after?: HTMLImageElement; before?: HTMLImageElement; logo?: HTMLImageElement | null; key?: string; logoPath?: string | null }>({});
+  const [, force] = useState(0);
+  const t = project.targets.find((x) => x.id === target) ?? project.targets[0];
+  const L = layoutOf(t);
+  const est = estimate(project, media);
+  const hasLook = project.style.look !== "none" || project.style.auto_color || project.style.sharpen;
+
+  // подложка (видео без текста) — перерисовывается видеодвижком только при изменении картинки
+  useEffect(() => {
+    const id = setTimeout(() => loadBase(), 350);
+    return () => clearTimeout(id);
+  }, [project, target, previewAt]);
+
+  // загрузка картинок подложки и лого
+  useEffect(() => {
+    const load = (src: string) =>
+      new Promise<HTMLImageElement>((res) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => res(im);
+        im.src = src;
+      });
+    (async () => {
+      if (base && imgs.current.key !== base.key + base.path) {
+        imgs.current.after = await load(fileUrl(base.path));
+        imgs.current.before = base.before ? await load(fileUrl(base.before)) : undefined;
+        imgs.current.key = base.key + base.path;
+        force((n) => n + 1);
+      }
+      const lp = project.style.watermark;
+      if (lp !== imgs.current.logoPath) {
+        imgs.current.logoPath = lp;
+        imgs.current.logo = lp ? await load(fileUrl(lp)) : null;
+        force((n) => n + 1);
+      }
+    })();
+  }, [base, project.style.watermark]);
+
+  // отрисовка: мгновенно при любом изменении текста/оформления
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const c = canvas.current;
+      if (!c) return;
+      const fonts = await resolveFonts(project);
+      if (!alive) return;
+      const scale = 0.5;
+      c.width = Math.round(L.w * scale);
+      c.height = Math.round(L.h * scale);
+      const ctx = c.getContext("2d")!;
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, L.w, L.h);
+      const { after, before } = imgs.current;
+      if (after?.naturalWidth) ctx.drawImage(after, 0, 0, L.w, L.h);
+      if (compare && hasLook && before?.naturalWidth) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, L.w * split, L.h);
+        ctx.clip();
+        ctx.drawImage(before, 0, 0, L.w, L.h);
+        ctx.restore();
+      }
+      const m = textModel(project, info);
+      drawStatic(ctx, project, m, L, fonts);
+      const hookVisible = previewAt == null || previewAt <= project.style.hook_seconds;
+      if (hookVisible) drawHook(ctx, m, L, fonts);
+      drawExtras(ctx, project, L, imgs.current.logo ?? null, est.total > 0 && previewAt != null ? Math.min(1, previewAt / est.total) : 0.35);
+      if (showPlatform) drawPlatformMask(ctx, L);
+      if (compare && hasLook) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(L.w * split - 2, 0, 4, L.h);
+        const fs = Math.round(Math.max(L.w, L.h) * 0.018);
+        ctx.font = `600 ${fs}px "Segoe UI", sans-serif`;
+        ctx.textBaseline = "bottom";
+        const label = (t: string, x: number, align: CanvasTextAlign) => {
+          ctx.textAlign = align;
+          const w = ctx.measureText(t).width + fs;
+          ctx.fillStyle = "rgba(0,0,0,0.6)";
+          ctx.fillRect(align === "left" ? x : x - w, L.h - fs * 2.6, w, fs * 1.7);
+          ctx.fillStyle = "#fff";
+          ctx.fillText(t, align === "left" ? x + fs / 2 : x - fs / 2, L.h - fs * 1.15);
+        };
+        label("ДО", fs, "left");
+        label("ПОСЛЕ", L.w - fs, "right");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  });
+
+  const dragSplit = (e: React.PointerEvent) => {
+    if (!(compare && hasLook) || !canvas.current) return;
+    const r = canvas.current.getBoundingClientRect();
+    const move = (ev: PointerEvent) => setSplit(Math.min(0.98, Math.max(0.02, (ev.clientX - r.left) / r.width)));
+    move(e.nativeEvent);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  if (!project.clips.some((c) => c.enabled))
+    return (
+      <div className="stage-empty">
+        <ImageIcon size={40} />
+        <p>Добавьте клипы — здесь появится живой предпросмотр ролика со всем оформлением.</p>
+      </div>
+    );
   return (
-    <div className="frame-preview">
-      {frame ? <img src={`${fileUrl(frame.path)}?t=${frame.at}`} alt="Кадр будущего ролика" /> : <div className="stage-empty"><ImageIcon size={40} /><p>Покажу кадр будущего ролика со всем оформлением.</p></div>}
-      <button className="btn primary" onClick={() => renderFrame()} disabled={stage === "Рисую кадр…"}>
-        <RefreshCw size={15} className={stage === "Рисую кадр…" ? "spin" : ""} /> {frame ? "Обновить кадр" : "Показать кадр"}
-      </button>
+    <div className="live">
+      <div className="live-tools">
+        <Toggle label="Интерфейс площадки" checked={showPlatform} onChange={(v) => set({ showPlatform: v })} disabled={!L.vertical} />
+        <Toggle label="До / после" checked={compare} onChange={(v) => set({ compare: v })} disabled={!hasLook} />
+        <span className="grow" />
+        <button className={`btn subtle sm ${showExact ? "on" : ""}`} onClick={() => setShowExact(!showExact)} disabled={!frame} data-tip="Переключиться между живым предпросмотром и точным кадром видеодвижка">
+          {showExact ? "Живой" : "Точный"}
+        </button>
+        <button
+          className="btn subtle sm"
+          onClick={async () => {
+            await renderFrame();
+            setShowExact(true);
+          }}
+          disabled={stage === "Рисую точный кадр…"}
+          data-tip="Отрисовать кадр видеодвижком — ровно как в итоговом ролике (F5)"
+        >
+          <RefreshCw size={13} className={stage === "Рисую точный кадр…" ? "spin" : ""} /> Точный кадр
+        </button>
+      </div>
+      <div className="live-canvas" ref={wrapRef}>
+        {showExact && frame ? (
+          <img src={`${fileUrl(frame.path)}?t=${frame.at}`} alt="Точный кадр ролика" style={{ aspectRatio: `${L.w} / ${L.h}` }} />
+        ) : (
+          <canvas ref={canvas} style={{ aspectRatio: `${L.w} / ${L.h}`, cursor: compare && hasLook ? "ew-resize" : undefined }} onPointerDown={dragSplit} />
+        )}
+        {baseLoading && !showExact && <div className="live-loading">обновляю кадр…</div>}
+      </div>
+      <div className="live-time">
+        <span className="dim">Момент ролика</span>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(1, est.total)}
+          step={0.1}
+          value={previewAt ?? Math.min(project.style.hook_seconds * 0.5, est.total * 0.3)}
+          onChange={(e) => set({ previewAt: parseFloat(e.target.value) })}
+          aria-label="Момент ролика"
+        />
+        <output>{fmtSec(previewAt ?? Math.min(project.style.hook_seconds * 0.5, est.total * 0.3))}</output>
+      </div>
     </div>
   );
 }
@@ -176,7 +341,7 @@ function Strip() {
             key={s.id}
             className={`seg ${s.photo ? "photo" : ""} ${s.id === sel ? "on" : ""}`}
             style={{ flexGrow: s.w / sum }}
-            title={baseName(s.path)}
+            data-tip={baseName(s.path)}
             onClick={() => !s.photo && useStore.getState().set({ selectedClip: s.id, preview: "clip" })}
           >
             <Thumb path={s.path} width={120} at={0} />
@@ -205,10 +370,10 @@ export function Stage() {
           ]}
         />
         {mode !== "clip" && (
-          <Segmented value={target} onChange={(v) => set({ previewTarget: v, frame: null })} options={targets.map((t) => [t.id, t.height > t.width ? "9:16" : t.width === t.height ? "1:1" : "16:9"] as [string, string])} />
+          <Segmented value={target} onChange={(v) => set({ previewTarget: v, frame: null, base: null })} options={targets.map((t) => [t.id, ratioLabel(t.width, t.height)] as [string, string])} />
         )}
       </div>
-      <div className="stage-body">{mode === "clip" ? <ClipPreview /> : mode === "frame" ? <FramePreview /> : <DraftPreview />}</div>
+      <div className="stage-body">{mode === "clip" ? <ClipPreview /> : mode === "frame" ? <LivePreview /> : <DraftPreview />}</div>
       <Strip />
     </main>
   );
