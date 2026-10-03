@@ -10,8 +10,8 @@ use crate::project::{AfterAction, Project, Target};
 use crate::render::{make_cover, render_plan, run_ffmpeg, Cancel};
 use crate::tools::Tools;
 use crate::util::{
-    fmt_duration_ru, free_space, parse_duration_from_name, parse_specs, sanitize_filename,
-    unique_path,
+    aspect_label, fmt_duration_ru, free_space, parse_duration_from_name, parse_specs,
+    sanitize_filename, unique_path, ReservedPath,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -606,26 +606,22 @@ pub fn build(
             }
             *total_dur.lock().unwrap() = plan.total;
         }
-        let out = if draft.is_some() {
-            opts.cache_dir.join(format!("draft-{}.mp4", rng_name()))
+        // `_reserved` держит имя занятым до конца сборки этого формата.
+        let (out, _reserved) = if draft.is_some() {
+            (
+                opts.cache_dir.join(format!("draft-{}.mp4", rng_name())),
+                None,
+            )
         } else {
             let dir = out_dir(t, opts);
             std::fs::create_dir_all(&dir)?;
             let suffix = if n_t > 1 {
-                format!(
-                    " {}",
-                    if t.is_vertical() {
-                        "9x16"
-                    } else if t.width == t.height {
-                        "1x1"
-                    } else {
-                        "16x9"
-                    }
-                )
+                format!(" {}", aspect_label(t.width, t.height))
             } else {
                 String::new()
             };
-            unique_path(&dir, &format!("{name_stem}{suffix}"), "mp4")
+            let r = ReservedPath::new(&dir, &format!("{name_stem}{suffix}"), "mp4");
+            (r.path.clone(), Some(r))
         };
         stage(&format!("Сборка: {}", t.label));
         on(Event::Log {
@@ -746,9 +742,16 @@ pub fn build(
         let srcs: Vec<PathBuf> = clips.iter().map(|c| c.info.path.clone()).collect();
         match &p.after {
             AfterAction::Keep => {}
-            AfterAction::Archive { dir } => {
+            AfterAction::Archive { dir } => 'arch: {
                 let dest = dir.join(stamp());
-                std::fs::create_dir_all(&dest)?;
+                if let Err(e) = std::fs::create_dir_all(&dest) {
+                    // ролики уже готовы — не превращаем успех в ошибку из-за папки архива
+                    warnings.push(format!(
+                        "Папка архива недоступна ({}): исходники оставлены на месте. {e}",
+                        dir.display()
+                    ));
+                    break 'arch;
+                }
                 let mut moved = 0;
                 for s in &srcs {
                     let name = s
@@ -800,6 +803,32 @@ pub fn build(
         after,
         all_ok,
     })
+}
+
+/// Удаляет старые файлы `prefix*suffix` в папке, оставляя `keep` самых новых.
+fn prune_files(dir: &Path, prefix: &str, suffix: &str, keep: usize) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(prefix) && n.ends_with(suffix)
+        })
+        .filter_map(|e| {
+            let m = e.metadata().ok()?;
+            m.is_file()
+                .then(|| (m.modified().unwrap_or(std::time::UNIX_EPOCH), e.path()))
+        })
+        .collect();
+    if files.len() <= keep {
+        return;
+    }
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
+    for (_, p) in files.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
 }
 
 fn rng_name() -> String {
@@ -915,6 +944,7 @@ pub fn preview_frame(
         .at
         .unwrap_or_else(|| (p.style.hook_seconds * 0.5).min(plan.total * 0.3))
         .clamp(0.0, (plan.total - 0.05).max(0.0));
+    prune_files(&opts.cache_dir, "frame-", ".png", 16);
     let out = opts.cache_dir.join(format!("frame-{}.png", rng_name()));
     let mut args = plan.args.clone();
     args.extend([
@@ -945,6 +975,8 @@ pub fn look_thumbnails(
     width: u32,
 ) -> Result<Vec<(String, PathBuf)>> {
     std::fs::create_dir_all(out_dir)?;
+    // предыдущие наборы миниатюр больше не нужны интерфейсу (держим 2 набора)
+    prune_files(out_dir, "", ".png", crate::looks::LOOKS.len() * 2);
     let stem = base
         .file_stem()
         .and_then(|s| s.to_str())

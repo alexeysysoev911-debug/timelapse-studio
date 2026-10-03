@@ -7,10 +7,11 @@ import { FONTS } from "./types";
 
 const EMOJI_FALLBACK = `"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI", sans-serif`;
 const loadedCustom = new Map<string, string>();
+const failedCustom = new Set<string>();
 
 /** CSS-семейство для шрифта: встроенный id → «TS Montserrat», свой файл → загружается из файла. */
 export async function fontFamily(id: string, customPath: string | null): Promise<string> {
-  if (customPath) {
+  if (customPath && !failedCustom.has(customPath)) {
     const cached = loadedCustom.get(customPath);
     if (cached) return cached;
     const name = `TS-custom-${loadedCustom.size + 1}`;
@@ -21,7 +22,10 @@ export async function fontFamily(id: string, customPath: string | null): Promise
       loadedCustom.set(customPath, name);
       return name;
     } catch {
-      /* битый файл — используем встроенный */
+      // битый или недоступный файл — предупреждаем один раз и рисуем встроенным шрифтом
+      failedCustom.add(customPath);
+      const file = customPath.split(/[\\/]/).pop();
+      window.dispatchEvent(new CustomEvent("tls-font-failed", { detail: file }));
     }
   }
   const f = FONTS.find((x) => x.id === id) ?? FONTS[0];

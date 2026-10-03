@@ -135,6 +135,60 @@ pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     dir.join(format!("{stem} {}.{ext}", std::process::id()))
 }
 
+/// Имя выходного файла, «занятое» на время сборки: параллельные сборки форматов
+/// не получат один и тот же путь, даже пока файла ещё нет на диске.
+pub struct ReservedPath {
+    pub path: PathBuf,
+}
+
+static RESERVED_PATHS: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+impl ReservedPath {
+    pub fn new(dir: &Path, stem: &str, ext: &str) -> ReservedPath {
+        let mut held = RESERVED_PATHS.lock().unwrap_or_else(|e| e.into_inner());
+        let free = |p: &PathBuf| {
+            !p.exists() && !p.with_extension(format!("{ext}.part")).exists() && !held.contains(p)
+        };
+        let mut path = dir.join(format!("{stem}.{ext}"));
+        if !free(&path) {
+            path = (2..10_000)
+                .map(|i| dir.join(format!("{stem} ({i}).{ext}")))
+                .find(|p| free(p))
+                .unwrap_or_else(|| dir.join(format!("{stem} {}.{ext}", crate::util::rng_suffix())));
+        }
+        held.push(path.clone());
+        ReservedPath { path }
+    }
+}
+
+impl Drop for ReservedPath {
+    fn drop(&mut self) {
+        let mut held = RESERVED_PATHS.lock().unwrap_or_else(|e| e.into_inner());
+        held.retain(|p| p != &self.path);
+    }
+}
+
+fn rng_suffix() -> String {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}", n & 0xffff_ffff)
+}
+
+/// Отношение сторон в виде «9x16», «4x5», «1x1», «16x9».
+pub fn aspect_label(w: u32, h: u32) -> String {
+    fn gcd(a: u32, b: u32) -> u32 {
+        if b == 0 {
+            a
+        } else {
+            gcd(b, a % b)
+        }
+    }
+    let g = gcd(w, h).max(1);
+    format!("{}x{}", w / g, h / g)
+}
+
 /// Убирает символы, которые шрифт видео не нарисует (эмодзи → квадратики).
 /// Возвращает (очищенный текст, были ли удалены символы).
 pub fn strip_unrenderable(s: &str) -> (String, bool) {

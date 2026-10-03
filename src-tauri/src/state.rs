@@ -19,6 +19,10 @@ pub struct AppState {
     pub res: tls_core::looks::Resources,
     pub tools: Mutex<Option<Result<Tools, String>>>,
     pub job: Mutex<Option<Cancel>>,
+    /// Сериализует «прочитать-изменить-записать» settings.json.
+    pub settings_lock: Mutex<()>,
+    /// Идёт установка обновления — новые сборки не запускаем.
+    pub updating: std::sync::atomic::AtomicBool,
 }
 
 /// Настройки программы (не проекта).
@@ -97,15 +101,22 @@ impl AppState {
             },
             tools: Mutex::new(None),
             job: Mutex::new(None),
+            settings_lock: Mutex::new(()),
+            updating: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
     /// ffmpeg: встроенный (ресурсы программы) → переменная TLS_FFMPEG_DIR → PATH.
     pub fn tools(&self) -> Result<Tools, String> {
-        let mut g = self.tools.lock().unwrap();
-        if let Some(Ok(t)) = g.as_ref() {
+        if let Some(Ok(t)) = self
+            .tools
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             return Ok(t.clone());
         }
+        // поиск ffmpeg (до нескольких секунд при первом запуске/антивирусе) — без удержания блокировки
         let bundled = self.dirs.resources.join("ffmpeg");
         let r = Tools::discover(Some(&bundled))
             .or_else(|_| match std::env::var_os("TLS_FFMPEG_DIR") {
@@ -117,7 +128,7 @@ impl AppState {
             Ok(t) => tracing::info!(ffmpeg = %t.ffmpeg.display(), "ffmpeg найден"),
             Err(e) => tracing::error!(%e, "ffmpeg не найден"),
         }
-        *g = Some(r.clone());
+        *self.tools.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.clone());
         r
     }
 
@@ -126,17 +137,30 @@ impl AppState {
     }
 
     pub fn settings(&self) -> Settings {
-        std::fs::read(self.settings_path())
-            .ok()
-            .and_then(|d| serde_json::from_slice(&d).ok())
-            .unwrap_or_default()
+        let path = self.settings_path();
+        let Ok(d) = std::fs::read(&path) else {
+            return Settings::default();
+        };
+        match serde_json::from_slice(&d) {
+            Ok(s) => s,
+            Err(e) => {
+                // не затираем молча: сохраняем копию повреждённого файла для разбора
+                tracing::error!(%e, "settings.json повреждён — использую настройки по умолчанию");
+                let _ = std::fs::rename(&path, path.with_extension("json.bad"));
+                Settings::default()
+            }
+        }
     }
 
-    pub fn store_settings(&self, s: &Settings) {
-        let _ = tls_core::util::atomic_write(
+    /// Атомарное изменение настроек (не теряет поля, которые параллельно меняет другой код).
+    pub fn update_settings(&self, f: impl FnOnce(&mut Settings)) -> std::io::Result<()> {
+        let _g = self.settings_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self.settings();
+        f(&mut s);
+        tls_core::util::atomic_write(
             &self.settings_path(),
-            &serde_json::to_vec_pretty(s).unwrap_or_default(),
-        );
+            &serde_json::to_vec_pretty(&s).unwrap_or_default(),
+        )
     }
 
     pub fn projects_dir(&self) -> PathBuf {

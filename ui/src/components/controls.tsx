@@ -1,5 +1,6 @@
 // Базовые элементы управления в стиле Fluent: подписи, подсказки, доступность с клавиатуры.
 import { useId, type ReactNode } from "react";
+import type React from "react";
 import { Info } from "lucide-react";
 
 export function Field({ label, hint, children, inline }: { label: string; hint?: string; children: ReactNode; inline?: boolean }) {
@@ -18,10 +19,10 @@ export function Field({ label, hint, children, inline }: { label: string; hint?:
   );
 }
 
-export function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
+export function Toggle({ checked, onChange, label, hint, disabled, tip }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean; tip?: string }) {
   const id = useId();
   return (
-    <label className={`toggle ${disabled ? "disabled" : ""}`} htmlFor={id}>
+    <label className={`toggle ${disabled ? "disabled" : ""}`} htmlFor={id} data-tip={tip}>
       <input id={id} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className="track" aria-hidden />
       <span className="toggle-text">
@@ -76,10 +77,21 @@ export function Select<T extends string>({ value, onChange, options, label, hint
 }
 
 export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: [T, string][]; label?: string }) {
+  // стрелки ← → переключают вариант, как в стандартных переключателях Windows
+  const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const i = options.findIndex(([v]) => v === value);
+    const next = options[(i + d + options.length) % options.length];
+    onChange(next[0]);
+    const btns = e.currentTarget.querySelectorAll<HTMLButtonElement>("button");
+    btns[(i + d + options.length) % options.length]?.focus();
+  };
   const seg = (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div className="segmented" role="radiogroup" aria-label={label || undefined} onKeyDown={onKey}>
       {options.map(([v, t]) => (
-        <button key={v} role="radio" aria-checked={value === v} className={value === v ? "on" : ""} onClick={() => onChange(v)}>
+        <button key={v} role="radio" aria-checked={value === v} tabIndex={value === v ? 0 : -1} className={value === v ? "on" : ""} onClick={() => onChange(v)}>
           {t}
         </button>
       ))}

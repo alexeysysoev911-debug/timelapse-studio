@@ -37,6 +37,7 @@ export const api = {
   projectOpen: (id: string) => invoke<Project>("project_open", { id }),
   projectStore: (project: Project) => invoke<string>("project_store", { project }),
   projectDelete: (id: string) => invoke<void>("project_delete", { id }),
+  startupFile: () => invoke<string | null>("startup_file"),
   projectDuplicate: (id: string) => invoke<Project>("project_duplicate", { id }),
   projectInfo: (project: Project) => invoke<ClipInfoText>("project_info", { project }),
   settingsLoad: () => invoke<Settings>("settings_load"),

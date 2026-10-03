@@ -1,9 +1,9 @@
 // Действия пользователя: импорт файлов, проекты, сборка, предпросмотр, обновления.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "./api";
-import { addUnique, baseName, classify, newClip, preflight } from "./logic";
+import { addUnique, baseName, classify, newClip, plural, preflight } from "./logic";
 import { renderOverlays } from "./overlay";
-import { saveNow, useStore } from "./store";
+import { currentGen, saveNow, useStore } from "./store";
 import { defaultProject, type Project } from "./types";
 
 const st = () => useStore.getState();
@@ -60,7 +60,7 @@ export async function importPaths(paths: string[], forceKind?: "clips" | "photos
     .join(", ");
   if (added) s.toast("ok", `Добавлено — ${added}`);
   for (const b of c.bad.slice(0, 3)) s.toast("error", `${baseName(b.path)}: ${b.error}`);
-  if (c.bad.length > 3) s.toast("error", `И ещё ${c.bad.length - 3} файл(ов) не читаются`);
+  if (c.bad.length > 3) s.toast("error", `И ещё ${c.bad.length - 3} ${plural(c.bad.length - 3, ["файл не читается", "файла не читаются", "файлов не читаются"])}`);
   if (!st().selectedClip && st().project.clips.length) st().set({ selectedClip: st().project.clips[0].id });
   st().set({ stage: "" });
 }
@@ -99,11 +99,14 @@ async function load(p: Project, path: string | null = null) {
 export async function newProject() {
   await saveNow();
   const prev = st().project;
-  const hadContent = prev.clips.length > 0 || prev.id;
+  const empty = prev.clips.length === 0 && prev.end_photos.length === 0;
   st().replace(freshProject(), null);
   await saveNow();
-  if (hadContent && prev.id) {
-    st().toast("info", `Создан новый проект. «${prev.name}» сохранён в «Мои проекты».`, {
+  if (empty) {
+    // пустой черновик не засоряет «Мои проекты»
+    if (prev.id) api.projectDelete(prev.id).catch(() => {});
+  } else if (prev.id) {
+    st().toast("info", `Создан новый проект. «${prev.name}» сохранён в „Мои проекты“.`, {
       label: "Вернуть предыдущий",
       run: () => openFromLibrary(prev.id),
     });
@@ -227,8 +230,10 @@ export async function renderFrame() {
     const project = structuredClone(s.project);
     project.targets = project.targets.map((t) => ({ ...t, enabled: t.id === s.previewTarget }));
     const overlays = await renderOverlays(project, await freshInfo());
+    const gen = currentGen();
     const r = await api.previewFrame(project, s.previewTarget, { at: s.previewAt, scale: 0.5 }, overlays);
-    st().set({ frame: { path: r.path, at: Date.now() }, stage: "" });
+    if (gen !== currentGen()) return st().set({ stage: "" });
+    st().set({ frame: { path: r.path, at: Date.now() }, stage: "", preview: "frame", showExact: true });
     r.warnings.slice(0, 2).forEach((w) => st().toast("warn", w));
   } catch (e) {
     st().set({ stage: "" });
@@ -244,13 +249,16 @@ export function baseKey(p: Project, target: string, at: number | null): string {
 }
 
 let baseSeq = 0;
+let baseInflight = "";
 /** «Чистый» кадр для живого предпросмотра (+ кадр «до» для сравнения). */
 export async function loadBase() {
   const s = st();
   if (!s.project.clips.some((c) => c.enabled && s.media[c.path]?.info)) return;
   const key = baseKey(s.project, s.previewTarget, s.previewAt);
-  if (s.base?.key === key) return;
+  if (s.base?.key === key || key === baseInflight) return;
+  baseInflight = key;
   const seq = ++baseSeq;
+  const gen = currentGen();
   s.set({ baseLoading: true });
   try {
     const opt = { at: s.previewAt, bare: true, scale: 0.5 };
@@ -263,16 +271,20 @@ export async function loadBase() {
       b.style.sharpen = false;
       before = (await api.previewFrame(b, s.previewTarget, { ...opt, look_override: "none" })).path;
     }
-    if (seq === baseSeq) st().set({ base: { path: after.path, before, key }, baseLoading: false });
+    if (seq === baseSeq && gen === currentGen()) st().set({ base: { path: after.path, before, key }, baseLoading: false });
   } catch (e) {
-    if (seq === baseSeq) {
+    if (seq === baseSeq && gen === currentGen()) {
       st().set({ baseLoading: false });
       st().toast("error", errorText(e));
     }
+  } finally {
+    if (baseInflight === key) baseInflight = "";
+    if (seq === baseSeq && st().baseLoading) st().set({ baseLoading: false });
   }
 }
 
 let thumbsKey = "";
+let thumbsSeq = 0;
 export async function loadLookThumbs(force = false) {
   const s = st();
   const c = s.project.clips.find((x) => x.enabled && s.media[x.path]?.info);
@@ -280,20 +292,24 @@ export async function loadLookThumbs(force = false) {
   const key = JSON.stringify([c.path, c.trim_start, s.previewTarget, s.project.style.fit]);
   if (!force && key === thumbsKey && s.lookThumbs.length) return;
   thumbsKey = key;
+  const seq = ++thumbsSeq;
   try {
     const thumbs = await api.lookThumbs(s.project, s.previewTarget, s.previewAt ?? undefined);
-    st().set({ lookThumbs: thumbs });
+    if (seq === thumbsSeq) st().set({ lookThumbs: thumbs });
   } catch {
+    thumbsKey = "";
     /* без миниатюр — список названий всё равно работает */
   }
 }
 
 /** Проверка обновлений. silent — при запуске: молчим, если обновлений нет или нет интернета. */
 export async function checkUpdates(silent = false) {
+  if (st().updateChecking) return;
   try {
-    st().set({ updateError: null });
+    st().set({ updateError: null, updateChecking: true });
     const u = await api.updateCheck();
     st().set({ update: u });
+    if (st().showAbout) return; // всё видно в окне «О программе»
     if (u.available) {
       st().toast("info", `Доступна версия ${u.version}`, { label: "Подробнее", run: () => st().set({ showAbout: true }) });
     } else if (!silent) {
@@ -301,7 +317,9 @@ export async function checkUpdates(silent = false) {
     }
   } catch (e) {
     st().set({ updateError: errorText(e) });
-    if (!silent) st().toast("error", errorText(e));
+    if (!silent && !st().showAbout) st().toast("error", errorText(e));
+  } finally {
+    st().set({ updateChecking: false });
   }
 }
 

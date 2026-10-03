@@ -11,11 +11,15 @@ use tauri::{Emitter, Manager, WindowEvent};
 pub fn run() {
     tauri::Builder::default()
         // второй запуск — просто показываем уже открытое окно
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // второй запуск — показываем уже открытое окно; двойной щелчок по .tlsproj открывает проект в нём
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+            if let Some(f) = extra::project_arg(args.iter().skip(1).cloned()) {
+                let _ = app.emit("open-file", f);
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -23,7 +27,21 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let state = AppState::init(app.handle())?;
+            let state = match AppState::init(app.handle()) {
+                Ok(s) => s,
+                Err(e) => {
+                    // без окна и журнала программа просто «исчезла» бы — показываем причину
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    app.dialog()
+                        .message(format!(
+                            "Не удалось подготовить папки программы:\n{e}\n\nПроверьте доступ к папке AppData и перезапустите Timelapse Studio."
+                        ))
+                        .title("Timelapse Studio")
+                        .kind(MessageDialogKind::Error)
+                        .blocking_show();
+                    return Err(e);
+                }
+            };
             system::init_logging(&state.dirs.logs);
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "запуск");
             app.manage(state);
@@ -57,6 +75,7 @@ pub fn run() {
             extra::look_thumbs,
             extra::update_check,
             extra::update_install,
+            extra::startup_file,
             commands::app_info,
             commands::probe_files,
             commands::list_folder,

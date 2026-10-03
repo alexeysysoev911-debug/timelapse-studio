@@ -39,6 +39,8 @@ interface S {
   compare: boolean;
   lookThumbs: LookThumb[];
   frame: { path: string; at: number } | null;
+  /** Показан точный кадр видеодвижка вместо живого предпросмотра. */
+  showExact: boolean;
   draft: string | null;
   settings: Settings | null;
   building: boolean;
@@ -53,6 +55,7 @@ interface S {
   showAbout: boolean;
   update: UpdateInfo | null;
   updateError: string | null;
+  updateChecking: boolean;
   updateProgress: number | null;
   toasts: Toast[];
 
@@ -67,6 +70,13 @@ interface S {
 }
 
 let toastId = 0;
+let toastHover = false;
+export const setToastHover = (v: boolean) => {
+  toastHover = v;
+};
+/** Меняется при каждом открытии другого проекта — запоздавшие ответы старого проекта игнорируются. */
+let projectGen = 0;
+export const currentGen = () => projectGen;
 
 export const useStore = create<S>((set, get) => ({
   project: defaultProject(),
@@ -90,6 +100,7 @@ export const useStore = create<S>((set, get) => ({
   compare: false,
   lookThumbs: [],
   frame: null,
+  showExact: false,
   draft: null,
   settings: null,
   building: false,
@@ -104,6 +115,7 @@ export const useStore = create<S>((set, get) => ({
   showAbout: false,
   update: null,
   updateError: null,
+  updateChecking: false,
   updateProgress: null,
   toasts: [],
 
@@ -122,7 +134,14 @@ export const useStore = create<S>((set, get) => ({
       dirty: true,
     });
   },
-  replace: (p, path) =>
+  replace: (p, path) => {
+    // несохранённая правка уходящего проекта (автосохранение ещё ждёт таймера) — сохраняем сразу
+    if (autosaveTimer && autosaveEnabled) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      api.projectStore(get().project).catch(() => {});
+    }
+    projectGen++;
     set({
       project: p,
       past: [],
@@ -135,7 +154,9 @@ export const useStore = create<S>((set, get) => ({
       base: null,
       lookThumbs: [],
       info: null,
-    }),
+      showExact: false,
+    });
+  },
   undo: () => {
     const s = get();
     if (!s.past.length) return;
@@ -151,7 +172,9 @@ export const useStore = create<S>((set, get) => ({
   toast: (kind, text, action, ms) => {
     const id = ++toastId;
     set({ toasts: [...get().toasts, { id, kind, text, action }].slice(-5) });
-    setTimeout(() => get().dismiss(id), ms ?? (action ? 10000 : kind === "error" ? 9000 : 4500));
+    // пока курсор над уведомлениями, они не исчезают — можно дочитать и нажать кнопку
+    const tick = () => (toastHover ? setTimeout(tick, 1500) : get().dismiss(id));
+    setTimeout(tick, ms ?? (action ? 10000 : kind === "error" ? 9000 : 4500));
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));
@@ -166,9 +189,13 @@ export const enableAutosave = () => {
   autosaveEnabled = true;
 };
 export async function saveNow() {
+  autosaveTimer = null;
+  const gen = projectGen;
   const p = useStore.getState().project;
   try {
     const id = await api.projectStore(p);
+    // пока сохраняли, могли открыть другой проект — его id не трогаем
+    if (gen !== projectGen) return;
     const cur = useStore.getState().project;
     if (cur.id !== id) useStore.setState({ project: { ...cur, id } });
   } catch {

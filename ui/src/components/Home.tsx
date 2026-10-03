@@ -7,6 +7,7 @@ import { newProject, openFromLibrary, openProjectFile } from "../actions";
 import { useStore } from "../store";
 import type { ProjectMeta } from "../types";
 import { Thumb } from "./Thumb";
+import { Modal } from "./Modal";
 
 function when(ms: number): string {
   const d = new Date(ms);
@@ -37,8 +38,7 @@ export function Home() {
   if (!show) return null;
   const close = () => useStore.getState().set({ showHome: false });
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Мои проекты" onClick={close}>
-      <div className="dialog home" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Мои проекты" onClose={close} className="home">
         <div className="dialog-head">
           <h2>Мои проекты</h2>
           <div className="search">
@@ -73,7 +73,14 @@ export function Home() {
         ) : (
           <div className="home-grid">
             {list.map((p) => (
-              <div key={p.id} className={`pcard ${p.id === currentId ? "current" : ""}`} onClick={() => openFromLibrary(p.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && openFromLibrary(p.id)}>
+              <div key={p.id} className={`pcard ${p.id === currentId ? "current" : ""}`} onClick={() => openFromLibrary(p.id)} role="button" tabIndex={0} onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    openFromLibrary(p.id);
+                  }
+                }}
+                aria-label={`Открыть проект «${p.name || "Без названия"}»`}
+              >
                 <div className="pcard-cover">{p.first_clip ? <Thumb path={p.first_clip} width={360} at={1} /> : <div className="thumb broken" />}</div>
                 <div className="pcard-meta">
                   <b>{p.name || "Без названия"}</b>
@@ -99,7 +106,7 @@ export function Home() {
                   </button>
                   <button
                     className="icon sm"
-                    data-tip="Удалить в Корзину (видео не удаляются)"
+                    data-tip={p.id === currentId ? "Открытый проект удалить нельзя — сначала откройте другой" : "Удалить в Корзину (видео не удаляются)"}
                     disabled={p.id === currentId}
                     onClick={async () => {
                       if (!(await ask(`Удалить проект «${p.name}» в Корзину? Видеофайлы останутся на месте.`, { title: "Timelapse Studio", kind: "warning" }))) return;
@@ -118,7 +125,6 @@ export function Home() {
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

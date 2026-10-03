@@ -70,9 +70,19 @@ pub(crate) fn allow(app: &AppHandle, paths: &[PathBuf]) {
     }
 }
 
+/// Разрешить показ медиафайлов, которые пользователь выбрал/перетащил (только видео, фото, аудио).
 #[tauri::command]
 pub fn allow_files(app: AppHandle, paths: Vec<PathBuf>) {
-    allow(&app, &paths);
+    let media: Vec<PathBuf> = paths
+        .into_iter()
+        .filter(|p| {
+            kind_by_ext(p) != MediaKind::Unknown
+                || p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "ttf" | "otf"))
+        })
+        .collect();
+    allow(&app, &media);
 }
 
 #[derive(Serialize)]
@@ -143,7 +153,7 @@ pub async fn probe_files(app: AppHandle, paths: Vec<PathBuf>) -> CmdResult<Vec<P
 }
 
 /// Медиафайлы папки (для перетаскивания целой папки).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_folder(path: PathBuf) -> CmdResult<Vec<PathBuf>> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(&path)?
         .flatten()
@@ -281,7 +291,7 @@ enum Done {
 }
 
 /// Запуск сборки в фоне. События: `build-event` (Event), итог: `build-done`.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_build(
     app: AppHandle,
     project: Project,
@@ -289,6 +299,11 @@ pub fn start_build(
     overlays: Option<std::collections::HashMap<String, OverlayPayload>>,
 ) -> CmdResult<()> {
     let st = app.state::<AppState>();
+    if st.updating.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(err(
+            "Устанавливается обновление — программа сейчас перезапустится.",
+        ));
+    }
     let tools = st.tools().map_err(tls_core::Error::ToolMissing)?;
     let cancel = Cancel::new();
     {
@@ -405,18 +420,15 @@ pub fn cancel_build(st: State<AppState>) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn load_project(app: AppHandle, path: PathBuf) -> CmdResult<Project> {
     let p = Project::load(&path)?;
-    let mut files: Vec<PathBuf> = p.clips.iter().map(|c| c.path.clone()).collect();
-    files.extend(p.end_photos.iter().cloned());
-    files.extend(p.style.watermark.iter().cloned());
-    allow(&app, &files);
+    crate::extra::allow_project_files(&app, &p);
     remember_recent(&app.state::<AppState>(), &path);
     Ok(p)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_project(app: AppHandle, path: PathBuf, project: Project) -> CmdResult<()> {
     project.save(&path)?;
     remember_recent(&app.state::<AppState>(), &path);
@@ -424,14 +436,11 @@ pub fn save_project(app: AppHandle, path: PathBuf, project: Project) -> CmdResul
 }
 
 fn remember_recent(st: &AppState, path: &Path) {
-    let mut s = st.settings();
-    s.recent.retain(|p| p != path);
-    s.recent.insert(0, path.to_path_buf());
-    s.recent.truncate(10);
-    let _ = tls_core::util::atomic_write(
-        &st.settings_path(),
-        &serde_json::to_vec_pretty(&s).unwrap_or_default(),
-    );
+    let _ = st.update_settings(|s| {
+        s.recent.retain(|p| p != path);
+        s.recent.insert(0, path.to_path_buf());
+        s.recent.truncate(10);
+    });
 }
 
 #[tauri::command]
@@ -439,21 +448,37 @@ pub fn settings_load(st: State<AppState>) -> Settings {
     st.settings()
 }
 
+/// Настройки из интерфейса. Поля, которые ведёт сама программа (последний проект,
+/// недавние файлы), не перезаписываются устаревшей копией из интерфейса.
 #[tauri::command]
 pub fn settings_store(st: State<AppState>, settings: Settings) -> CmdResult<()> {
-    Ok(tls_core::util::atomic_write(
-        &st.settings_path(),
-        &serde_json::to_vec_pretty(&settings)?,
-    )?)
+    Ok(st.update_settings(|s| {
+        let last = std::mem::take(&mut s.last_project);
+        let recent = std::mem::take(&mut s.recent);
+        *s = settings;
+        s.last_project = last;
+        s.recent = recent;
+    })?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal(path: PathBuf) -> CmdResult<()> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(err)
 }
 
-#[tauri::command]
+/// Открыть готовый ролик/обложку/описание или папку. Исполняемые файлы не открываем:
+/// путь приходит из интерфейса, и запускать произвольные программы ему незачем.
+#[tauri::command(async)]
 pub fn open_path(path: PathBuf) -> CmdResult<()> {
+    let ok = path.is_dir()
+        || kind_by_ext(&path) != MediaKind::Unknown
+        || path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "txt" | "log" | "tlsproj"));
+    if !ok {
+        return Err(err("Этот тип файла программа не открывает."));
+    }
     tauri_plugin_opener::open_path(&path, None::<&str>).map_err(err)
 }
 

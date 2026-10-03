@@ -6,11 +6,11 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
+    "core:window:allow-set-theme",
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",
     "dialog:allow-ask",
-    "notification:default",
-    "opener:allow-open-url"
+    "notification:default"
   ]
 }

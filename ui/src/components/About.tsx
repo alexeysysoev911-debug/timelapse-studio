@@ -5,6 +5,7 @@ import { api, TELEGRAM_AUTHOR, TELEGRAM_CHANNEL } from "../api";
 import { checkUpdates, installUpdate } from "../actions";
 import { useStore } from "../store";
 import { Toggle } from "./controls";
+import { Modal } from "./Modal";
 
 declare const __BUILD_DATE__: string;
 
@@ -14,6 +15,7 @@ export function About() {
   const update = useStore((s) => s.update);
   const updateError = useStore((s) => s.updateError);
   const progress = useStore((s) => s.updateProgress);
+  const checking = useStore((s) => s.updateChecking);
   const settings = useStore((s) => s.settings);
   const toast = useStore((s) => s.toast);
   const close = () => useStore.getState().set({ showAbout: false });
@@ -29,8 +31,7 @@ export function About() {
     api.settingsStore(s).catch(() => {});
   };
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="О программе" onClick={close}>
-      <div className="dialog about" onClick={(e) => e.stopPropagation()}>
+    <Modal label="О программе" onClose={close} className="about">
         <button className="icon close" onClick={close} aria-label="Закрыть">
           <X size={18} />
         </button>
@@ -71,8 +72,8 @@ export function About() {
           {progress != null ? (
             <div className="update-progress">
               <span>Загружаю и устанавливаю обновление… Программа перезапустится сама.</span>
-              <div className="progress">
-                <i style={{ width: `${Math.round(progress * 100)}%` }} />
+              <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+                <i style={{ width: `${Math.max(3, Math.round(progress * 100))}%` }} />
               </div>
             </div>
           ) : update?.available ? (
@@ -86,10 +87,10 @@ export function About() {
           ) : (
             <div className="about-row">
               <span className={updateError ? "err" : ""} data-tip={updateError ?? undefined}>
-                {update ? `У вас последняя версия ${update.current}` : updateError ? "Сервер обновлений недоступен" : "Проверяю…"}
+                {checking ? "Проверяю…" : update ? `У вас последняя версия ${update.current}` : updateError ? "Не удалось проверить обновления" : "Проверяю…"}
               </span>
-              <button className="btn subtle sm" onClick={() => checkUpdates(false)}>
-                <RefreshCw size={13} /> Проверить обновления
+              <button className="btn subtle sm" onClick={() => checkUpdates(false)} disabled={checking}>
+                <RefreshCw size={13} className={checking ? "spin" : ""} /> Проверить обновления
               </button>
             </div>
           )}
@@ -114,8 +115,12 @@ export function About() {
           <button
             className="btn subtle"
             onClick={async () => {
-              await navigator.clipboard.writeText(await api.readLog());
-              toast("ok", "Журнал скопирован — отправьте его разработчику");
+              try {
+                await navigator.clipboard.writeText(await api.readLog());
+                toast("ok", "Журнал скопирован — отправьте его разработчику в Telegram");
+              } catch {
+                toast("error", "Не удалось скопировать журнал");
+              }
             }}
           >
             <Copy size={14} /> Скопировать журнал для поддержки
@@ -125,7 +130,6 @@ export function About() {
             Лицензии: MIT · OFL · GPL v3
           </span>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

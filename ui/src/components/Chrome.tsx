@@ -1,5 +1,5 @@
 // Верхняя панель, нижняя панель сборки, окно результатов, уведомления, справка.
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -22,8 +22,9 @@ import {
 } from "lucide-react";
 import { api, fileUrl } from "../api";
 import { cancelBuild, newProject, openProjectFile, saveProject, startBuild } from "../actions";
-import { baseName, estimate, fmtSec, preflight } from "../logic";
-import { useStore } from "../store";
+import { baseName, estimate, fmtSec, plural, preflight } from "../logic";
+import { Modal } from "./Modal";
+import { setToastHover, useStore } from "../store";
 
 export function TopBar({ onHelp }: { onHelp: () => void }) {
   const name = useStore((s) => s.project.name);
@@ -93,21 +94,34 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
   );
 }
 
+function BuildLog() {
+  const log = useStore((s) => s.log);
+  return (
+    <pre className="log" aria-label="Журнал сборки">
+      {log.length ? log.join("\n") : "Журнал пуст — он заполнится во время сборки."}
+    </pre>
+  );
+}
+
 export function BuildBar() {
-  const s = useStore();
-  const est = estimate(s.project, s.media);
-  const warn = preflight(s.project, s.media);
+  // узкие подписки: строки журнала не перерисовывают всю панель
+  const project = useStore((s) => s.project);
+  const media = useStore((s) => s.media);
+  const building = useStore((s) => s.building);
+  const stage = useStore((s) => s.stage);
+  const progress = useStore((s) => s.progress);
+  const report = useStore((s) => s.report);
+  const s = { project, media, building, stage, progress, report };
+  const est = useMemo(() => estimate(project, media), [project, media]);
+  const warn = useMemo(() => preflight(project, media), [project, media]);
   const [showLog, setShowLog] = useState(false);
+  const nTargets = project.targets.filter((t) => t.enabled).length;
   return (
     <footer className={`buildbar ${showLog ? "with-log" : ""}`}>
-      {showLog && (
-        <pre className="log" aria-label="Журнал сборки">
-          {s.log.length ? s.log.join("\n") : "Журнал пуст — он заполнится во время сборки."}
-        </pre>
-      )}
+      {showLog && <BuildLog />}
       <div className="bb-row">
         {s.building ? (
-          <button className="btn danger lg" onClick={() => cancelBuild()} data-tip="Остановить (Esc). Исходники не пострадают">
+          <button className="btn danger lg" onClick={() => cancelBuild()} data-tip="Остановить сборку. Исходники не пострадают">
             <Square size={16} /> Остановить
           </button>
         ) : (
@@ -134,7 +148,7 @@ export function BuildBar() {
             </div>
           ) : (
             <div className="bb-ready">
-              Готово к сборке: <b>{s.project.targets.filter((t) => t.enabled).length}</b> формат(а), ~<b>{fmtSec(est.total)}</b>
+              Готово к сборке: <b>{nTargets}</b> {plural(nTargets, ["формат", "формата", "форматов"])}, ~<b>{fmtSec(est.total)}</b>
             </div>
           )}
         </div>
@@ -158,8 +172,7 @@ export function Results() {
   const onClose = () => useStore.getState().set({ showResults: false });
   if (!report || !show) return null;
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Результат сборки" onClick={onClose}>
-      <div className="dialog wide" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Результат сборки" onClose={onClose} className="wide">
         <div className="dialog-head">
           {report.all_ok ? <CheckCircle2 className="ok" size={22} /> : <AlertTriangle className="warn" size={22} />}
           <h2>{report.all_ok ? "Ролики готовы" : "Сборка завершилась с ошибками"}</h2>
@@ -205,7 +218,15 @@ export function Results() {
                 {o.description && (
                   <div className="desc">
                     <pre>{o.description}</pre>
-                    <button className="btn subtle sm" onClick={() => navigator.clipboard.writeText(o.description!).then(() => toast("ok", "Описание скопировано"))}>
+                    <button
+                      className="btn subtle sm"
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(o.description!)
+                          .then(() => toast("ok", "Описание скопировано"))
+                          .catch(() => toast("error", "Не удалось скопировать — выделите текст и нажмите Ctrl+C"))
+                      }
+                    >
                       <Copy size={13} /> Скопировать описание
                     </button>
                   </div>
@@ -234,16 +255,18 @@ export function Results() {
             ))}
           </ul>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
   const dismiss = useStore((s) => s.dismiss);
+  useEffect(() => {
+    if (!toasts.length) setToastHover(false);
+  }, [toasts.length]);
   return (
-    <div className="toasts" aria-live="polite">
+    <div className="toasts" aria-live="polite" onMouseEnter={() => setToastHover(true)} onMouseLeave={() => setToastHover(false)}>
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.kind}`}>
           {t.kind === "ok" ? <CheckCircle2 size={16} /> : t.kind === "error" ? <XCircle size={16} /> : t.kind === "warn" ? <AlertTriangle size={16} /> : <Info size={16} />}
@@ -278,11 +301,12 @@ export function Help({ onClose }: { onClose: () => void }) {
     ["Ctrl+O / Ctrl+N", "Открыть из файла / новый проект"],
     ["Ctrl+P", "Мои проекты"],
     ["F5", "Точный кадр оформления"],
-    ["Esc", "Остановить сборку / закрыть окно"],
+    ["I / O", "Начало / конец обрезки клипа в текущей позиции"],
+    ["F1", "Справка"],
+    ["Esc", "Закрыть окно · остановить сборку (с подтверждением)"],
   ];
   return (
-    <div className="modal" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Справка" onClose={onClose}>
         <div className="dialog-head">
           <h2>Справка</h2>
           <span className="grow" />
@@ -311,7 +335,6 @@ export function Help({ onClose }: { onClose: () => void }) {
         <p className="dim">
           Материал и слой берутся из имени файла: <code>Spool_PETG_0.2.mp4</code>. Время процесса — из <code>3h1m33s</code> или <code>45m10s</code>.
         </p>
-      </div>
-    </div>
+    </Modal>
   );
 }

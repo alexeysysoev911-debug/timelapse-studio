@@ -40,11 +40,18 @@
   --tx: #1b1b1f;
   --mut: #5f5f6b;
   --stage: #e6e6ea;
-  --accent: #c76f00;
-  --accent-hover: #b06200;
+  /* контраст текста ≥ 4.5:1 на светлом фоне (WCAG AA) */
+  --accent: #a85d00;
+  --accent-hover: #934f00;
   --accent-text: #ffffff;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --err: #cf222e;
+  --focus: #0f62d6;
   color-scheme: light;
 }
+/* до загрузки настроек: тёмная палитра по умолчанию — без белой вспышки при запуске */
+:root:not([data-theme]) { --bg: #1c1c1e; --tx: #f2f2f4; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body { font: 14px/1.45 var(--font); color: var(--tx); background: var(--bg); overflow: hidden; user-select: none; -webkit-font-smoothing: antialiased; }
@@ -68,13 +75,11 @@ code, kbd { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; 
 .project-name { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; min-width: 120px; max-width: 360px; font-weight: 600; }
 .project-name:hover { border-color: var(--line); }
 .project-name:focus { border-color: var(--focus); outline: none; background: var(--panel); }
-.dirty { color: var(--accent); font-size: 12px; }
 
 /* ---------- кнопки ---------- */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--radius); padding: 6px 12px; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--radius); padding: 6px 12px; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, transform .08s ease-out, filter .12s, box-shadow .12s; }
 .btn:hover:not(:disabled) { background: var(--hover); }
 .btn:active:not(:disabled) { transform: scale(0.97); filter: brightness(0.93); }
-.btn { transition: background .12s, border-color .12s, transform .08s ease-out, filter .12s, box-shadow .12s; }
 .btn.primary:hover:not(:disabled) { box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
@@ -84,8 +89,7 @@ code, kbd { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; 
 .btn.subtle.on { background: var(--hover); }
 .btn.sm { padding: 3px 8px; font-size: 12.5px; border-radius: 6px; }
 .btn.lg { padding: 10px 22px; font-size: 15px; border-radius: 10px; min-width: 190px; }
-.icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--tx); flex: none; }
-.icon { transition: background .12s, transform .08s ease-out, color .12s; }
+.icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: none; background: transparent; border-radius: 6px; cursor: pointer; color: var(--tx); flex: none; transition: background .12s, transform .08s ease-out, color .12s; }
 .icon:hover:not(:disabled) { background: var(--hover); }
 .icon:active:not(:disabled) { transform: scale(0.9); background: color-mix(in srgb, var(--accent) 22%, var(--hover)); color: var(--accent); }
 .icon.sm { width: 24px; height: 24px; }
@@ -357,8 +361,23 @@ input[type="color"] { width: 48px; height: 30px; border: 1px solid var(--line); 
 .live-canvas { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 .live-canvas canvas, .live-canvas img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: var(--radius); box-shadow: var(--shadow); background: #000; }
 .live-loading { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.65); color: #fff; font-size: 12px; padding: 3px 10px; border-radius: 10px; animation: tipin .2s; }
-.cmp-label { position: absolute; bottom: 12px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 8px; pointer-events: none; }
-.cmp-label.left { left: 12px; } .cmp-label.right { right: 12px; }
 .live-time { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
 .live-time input { flex: 1; accent-color: var(--accent); }
 .live-time output { min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- доработки качества ---------- */
+/* длинные пути Windows не вылезают за подсказку */
+.tooltip { overflow-wrap: anywhere; }
+/* действия строки видны и с клавиатуры */
+.clip-row:focus-within .row-actions, .photo-grid figure:focus-within .icon.over { opacity: 1; }
+/* сегментированный переключатель: отклик на наведение, как у остальных кнопок */
+.segmented button:hover:not(.on) { background: var(--hover); color: var(--tx); }
+/* шрифты: длинные названия не вылезают из плитки */
+.font-grid button, .font-grid .font-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1180px) { .font-grid { grid-template-columns: repeat(2, 1fr); } }
+/* окна поверх всего: фокус виден, текст можно выделять */
+.dialog { outline: none; }
+/* уведомления не закрывают открытый журнал */
+.app:has(.buildbar.with-log) .toasts { bottom: 296px; }
+.font-grid.muted { opacity: .55; }
+.font-grid.muted .font-chip.on { border-color: var(--line); background: var(--panel2); }

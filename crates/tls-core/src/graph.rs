@@ -752,7 +752,18 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
         }
     }
     let fc = fc.trim_end_matches(';').to_string();
-    args.extend(["-filter_complex".into(), fc, "-map".into(), "[vout]".into()]);
+    // Windows ограничивает командную строку 32 767 символами: длинный граф (десятки клипов)
+    // передаём файлом в рабочей папке.
+    if fc.len() > 6000 {
+        files.push(WorkFile::Write {
+            name: "graph.txt".into(),
+            data: fc.into_bytes(),
+        });
+        args.extend(["-filter_complex_script".into(), "graph.txt".into()]);
+    } else {
+        args.extend(["-filter_complex".into(), fc]);
+    }
+    args.extend(["-map".into(), "[vout]".into()]);
     if inp.audio {
         args.extend(["-map".into(), "[aout]".into()]);
     }

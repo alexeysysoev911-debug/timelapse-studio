@@ -103,7 +103,35 @@ fn parse_f(s: &Option<String>) -> f64 {
         .unwrap_or(0.0)
 }
 
+type ProbeKey = (std::path::PathBuf, u64, Option<std::time::SystemTime>);
+static PROBE_CACHE: std::sync::Mutex<Vec<(ProbeKey, MediaInfo)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Свойства файла. Результат запоминается (путь + размер + время изменения):
+/// предпросмотр и миниатюры не запускают ffprobe и проверку декодирования повторно.
 pub fn probe(tools: &Tools, path: &Path) -> Result<MediaInfo> {
+    let key = std::fs::metadata(path)
+        .ok()
+        .map(|m| (path.to_path_buf(), m.len(), m.modified().ok()));
+    if let Some(k) = &key {
+        let cache = PROBE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, info)) = cache.iter().find(|(ck, _)| ck == k) {
+            return Ok(info.clone());
+        }
+    }
+    let info = probe_uncached(tools, path)?;
+    if let Some(k) = key {
+        let mut cache = PROBE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        cache.retain(|(ck, _)| ck.0 != k.0);
+        if cache.len() >= 512 {
+            cache.remove(0);
+        }
+        cache.push((k, info.clone()));
+    }
+    Ok(info)
+}
+
+fn probe_uncached(tools: &Tools, path: &Path) -> Result<MediaInfo> {
     let unreadable = |reason: &str| Error::Unreadable {
         path: path.display().to_string(),
         reason: reason.to_string(),
@@ -268,6 +296,11 @@ fn count_duration(tools: &Tools, path: &Path, fps: f64) -> Option<f64> {
 
 /// Миниатюра кадра (jpg) — для интерфейса.
 pub fn thumbnail(tools: &Tools, path: &Path, at: f64, width: u32, out: &Path) -> Result<()> {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let tmp = out.with_extension(format!("{nonce:x}.part.jpg"));
     let mut c = tools.ffmpeg_cmd();
     c.args(["-v", "error", "-y"]);
     if at > 0.0 {
@@ -283,11 +316,16 @@ pub fn thumbnail(tools: &Tools, path: &Path, at: f64, width: u32, out: &Path) ->
             "-q:v",
             "4",
         ])
-        .arg(out);
-    let o = run_with_timeout(c, Duration::from_secs(60), "миниатюра")?;
-    if o.ok() && out.is_file() {
+        // во временный файл: оборванный/параллельный рендер не оставит битую миниатюру в кэше
+        .arg(&tmp);
+    let o = run_with_timeout(c, Duration::from_secs(60), "миниатюра");
+    let ok = matches!(&o, Ok(o) if o.ok()) && tmp.is_file();
+    if ok && crate::util::rename_retry(&tmp, out).is_ok() || out.is_file() {
+        let _ = std::fs::remove_file(&tmp);
         Ok(())
     } else {
+        let _ = std::fs::remove_file(&tmp);
+        o?;
         Err(Error::Unreadable {
             path: path.display().to_string(),
             reason: "не удалось получить кадр".into(),

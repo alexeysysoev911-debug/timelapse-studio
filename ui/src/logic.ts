@@ -132,3 +132,26 @@ export function preflight(p: Project, media: Record<string, ProbeItem>): string[
     w.push(`Ролик получится ${fmtSec(est.total)} — для Reels и Shorts лучше до 3 минут.`);
   return w;
 }
+
+/** Русские формы множественного числа: plural(5, ["файл", "файла", "файлов"]) → «файлов». */
+export function plural(n: number, [one, few, many]: [string, string, string]): string {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b === 1) return one;
+  if (b >= 2 && b <= 4) return few;
+  return many;
+}
+
+/** Фокус в поле ввода — горячие клавиши-буквы не перехватываем. */
+export function isTyping(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (el.tagName === "INPUT") {
+    const type = (el as HTMLInputElement).type;
+    return !["checkbox", "radio", "range", "button", "submit"].includes(type);
+  }
+  return false;
+}

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { AlertOctagon, Upload } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, errorText, onBuildDone, onBuildEvent, onCloseRequested, onUpdateProgress } from "./api";
@@ -9,6 +11,7 @@ import { About } from "./components/About";
 import { Home } from "./components/Home";
 import { TooltipLayer } from "./components/Tooltip";
 import { defaultProject, type AppInfo } from "./types";
+import { isTyping } from "./logic";
 import { BuildBar, Help, Results, Toasts, TopBar } from "./components/Chrome";
 import { Inspector } from "./components/Inspector";
 import { Library } from "./components/Library";
@@ -21,6 +24,15 @@ function useTheme() {
     const apply = () => {
       const dark = theme === "dark" || (theme === "system" && mq.matches);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
+      try {
+        localStorage.setItem("tls-theme", dark ? "dark" : "light"); // для первого кадра без вспышки
+      } catch {
+        /* хранилище недоступно — не страшно */
+      }
+      // заголовок окна Windows — в цвет темы программы
+      getCurrentWindow()
+        .setTheme(theme === "system" ? null : dark ? "dark" : "light")
+        .catch(() => {});
     };
     apply();
     mq.addEventListener("change", apply);
@@ -54,6 +66,9 @@ export default function App() {
         await refreshMedia(proj);
         enableAutosave();
         if (!saved) await saveNow();
+        // программу открыли двойным щелчком по файлу проекта
+        const file = await api.startupFile().catch(() => null);
+        if (file) await openProjectFile(file);
         if (settings.auto_update_check) setTimeout(() => checkUpdates(true), 4000);
       } catch (e) {
         setFatal(errorText(e));
@@ -133,49 +148,72 @@ export default function App() {
     };
   }, []);
 
-  // горячие клавиши
+  // горячие клавиши. e.code — физическая клавиша: работает и в русской раскладке (Ctrl+Я = Ctrl+Z)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
-      const typing = (e.target as HTMLElement)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "text";
-      if (e.ctrlKey && e.key === "Enter") {
+      const typing = isTyping(e.target);
+      const ctrl = e.ctrlKey || e.metaKey;
+      const code = e.code;
+      if (ctrl && code === "Enter") {
         e.preventDefault();
-        startBuild(e.shiftKey);
-      } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "z" && !typing) {
+        if (!e.repeat) startBuild(e.shiftKey);
+      } else if (ctrl && !e.shiftKey && code === "KeyZ" && !typing) {
         e.preventDefault();
         s.undo();
-      } else if (e.ctrlKey && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z")) && !typing) {
+      } else if (ctrl && (code === "KeyY" || (e.shiftKey && code === "KeyZ")) && !typing) {
         e.preventDefault();
         s.redo();
-      } else if (e.ctrlKey && e.key.toLowerCase() === "s") {
+      } else if (ctrl && code === "KeyS") {
         e.preventDefault();
-        saveProject(e.shiftKey);
-      } else if (e.ctrlKey && e.key.toLowerCase() === "o") {
+        if (!e.repeat) saveProject(e.shiftKey);
+      } else if (ctrl && code === "KeyO") {
         e.preventDefault();
-        openProjectFile();
-      } else if (e.ctrlKey && e.key.toLowerCase() === "n") {
+        if (!e.repeat) openProjectFile();
+      } else if (ctrl && code === "KeyN") {
         e.preventDefault();
-        newProject();
+        if (!e.repeat) newProject();
+      } else if (ctrl && code === "KeyP") {
+        e.preventDefault();
+        s.set({ showHome: true });
       } else if (e.key === "F5") {
         e.preventDefault();
-        renderFrame();
+        if (!e.repeat) renderFrame();
       } else if (e.key === "F1") {
         e.preventDefault();
         setHelp(true);
-      } else if (e.ctrlKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        s.set({ showHome: true });
       } else if (e.key === "Escape") {
         if (s.showAbout) s.set({ showAbout: false });
         else if (s.showHome) s.set({ showHome: false });
         else if (s.showResults) s.set({ showResults: false });
         else if (help) setHelp(false);
-        else if (s.building) cancelBuild();
+        else if (s.building && !typing && !e.repeat) {
+          // сборка может идти минутами — случайный Esc не должен её обрывать
+          ask("Остановить сборку роликов?", { title: "Timelapse Studio", kind: "warning", okLabel: "Остановить", cancelLabel: "Продолжить" }).then((yes) => {
+            if (yes) cancelBuild();
+          });
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [help]);
+
+  // свой шрифт не загрузился — ролик соберётся встроенным, но пользователь должен об этом знать
+  useEffect(() => {
+    const f = (e: Event) =>
+      useStore.getState().toast("warn", `Шрифт «${(e as CustomEvent<string>).detail}» не загрузился — использую встроенный. Выберите другой файл на вкладке «Текст».`);
+    window.addEventListener("tls-font-failed", f);
+    return () => window.removeEventListener("tls-font-failed", f);
+  }, []);
+
+  // двойной щелчок по файлу .tlsproj, когда программа уже открыта
+  useEffect(() => {
+    const un = listen<string>("open-file", (e) => openProjectFile(e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   // запрет контекстного меню браузера (кроме полей ввода) — окно ведёт себя как программа
   useEffect(() => {

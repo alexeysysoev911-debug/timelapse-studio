@@ -67,9 +67,16 @@ pub fn run_ffmpeg(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     tracing::debug!(?args, "ffmpeg");
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| Error::ToolMissing(format!("{}: {e}", tools.ffmpeg.display())))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::ToolMissing(format!("{}: {e}", tools.ffmpeg.display()))
+        } else {
+            Error::Ffmpeg {
+                summary: format!("Не удалось запустить видеодвижок: {e}"),
+                log: vec![],
+            }
+        }
+    })?;
     crate::tools::bind_child(&child);
     let stdout = child.stdout.take().expect("stdout");
     let stderr = child.stderr.take().expect("stderr");
@@ -188,7 +195,18 @@ pub fn render_plan(
                     log: vec![],
                 });
             }
-            crate::util::rename_retry(&part, out)?;
+            if let Err(e) = crate::util::rename_retry(&part, out) {
+                // файл занят антивирусом/облаком — копируем, а не теряем готовый ролик
+                tracing::warn!("rename {}: {e}; копирую", part.display());
+                if std::fs::copy(&part, out).is_ok() {
+                    let _ = std::fs::remove_file(&part);
+                } else {
+                    return Err(Error::Invalid(format!(
+                        "Ролик собран, но не удалось дать ему имя. Он лежит здесь: {}",
+                        part.display()
+                    )));
+                }
+            }
             Ok(out.to_path_buf())
         }
         Err(e) => {

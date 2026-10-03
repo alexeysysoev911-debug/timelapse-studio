@@ -70,10 +70,11 @@ function VideoTab() {
   );
 }
 
-function FontPicker({ label, value, onChange, hint }: { label: string; value: string; onChange: (v: string) => void; hint?: string }) {
+function FontPicker({ label, value, onChange, hint, overridden }: { label: string; value: string; onChange: (v: string) => void; hint?: string; overridden?: boolean }) {
   return (
     <Field label={label} hint={hint}>
-      <div className="font-grid" role="radiogroup" aria-label={label}>
+      {overridden && <p className="note">Сейчас используется свой шрифт — встроенные включатся, если его убрать.</p>}
+      <div className={`font-grid ${overridden ? "muted" : ""}`} role="radiogroup" aria-label={label}>
         {FONTS.map((f) => (
           <button key={f.id} role="radio" aria-checked={value === f.id} className={`font-chip ${value === f.id ? "on" : ""}`} style={{ fontFamily: `"TS ${f.label}"` }} onClick={() => onChange(f.id)} data-tip={f.note}>
             {f.label}
@@ -121,8 +122,8 @@ function TextTab() {
         <TextInput label="Ник канала" hint="Показывается вверху кадра весь ролик и добавляется в описание." placeholder="@my_channel" maxLength={40} value={p.style.channel_text} onChange={(v) => upd((q) => void (q.style.channel_text = v), "ch")} />
       </Section>
       <Section title="Шрифты и цвет">
-        <FontPicker label="Шрифт хука" value={p.style.hook_font_family} onChange={(v) => upd((q) => void (q.style.hook_font_family = v))} hint="Крупная фраза в начале ролика." />
-        <FontPicker label="Шрифт плашки и ника" value={p.style.font_family} onChange={(v) => upd((q) => void (q.style.font_family = v))} />
+        <FontPicker label="Шрифт хука" value={p.style.hook_font_family} onChange={(v) => upd((q) => void (q.style.hook_font_family = v))} hint="Крупная фраза в начале ролика." overridden={!!p.style.font} />
+        <FontPicker label="Шрифт плашки и ника" value={p.style.font_family} onChange={(v) => upd((q) => void (q.style.font_family = v))} overridden={!!p.style.font} />
         <Field label="Свой шрифт" hint="TTF/OTF с кириллицей. Если выбран — заменяет оба шрифта выше.">
           <div className="file-pick">
             <span className="dim">{p.style.font ? baseName(p.style.font) : "Не выбран"}</span>
@@ -141,15 +142,18 @@ function TextTab() {
 function LookTab() {
   const p = useP();
   const thumbs = useStore((s) => s.lookThumbs);
-  const clipsKey = useStore((s) => s.project.clips.filter((c) => c.enabled).map((c) => c.path).join("|"));
+  const clipsKey = useStore((s) => s.project.clips.filter((c) => c.enabled).map((c) => `${c.path}|${c.trim_start}`).join("|"));
   const target = useStore((s) => s.previewTarget);
+  const fit = useStore((s) => s.project.style.fit);
+  const hasClips = clipsKey.length > 0;
   useEffect(() => {
     const id = setTimeout(() => loadLookThumbs(), 500);
     return () => clearTimeout(id);
-  }, [clipsKey, target]);
+  }, [clipsKey, target, fit]);
   return (
     <>
       <Section title="Цветовой образ">
+        {!hasClips && <p className="note">Добавьте клип — на плитках появится ваш кадр в каждом образе.</p>}
         <div className="look-grid" role="radiogroup" aria-label="Цветовой образ">
           {LOOKS.map(([id, label]) => {
             const th = thumbs.find((t) => t.id === id);
@@ -220,7 +224,10 @@ function MusicTab() {
     const a = new Audio(fileUrl(path));
     a.volume = 0.8;
     a.onended = () => setPlaying(null);
-    a.play().catch(() => setPlaying(null));
+    a.play().catch(() => {
+      setPlaying(null);
+      useStore.getState().toast("error", "Не удалось воспроизвести трек — проверьте звук в Windows");
+    });
     audio.current = a;
     setPlaying(key);
   };
@@ -233,12 +240,13 @@ function MusicTab() {
     <>
       <Section title="Встроенная музыка">
         <p className="note">Оригинальные треки программы — можно использовать в любых роликах, без претензий от площадок.</p>
+        {builtin.length === 0 && <p className="note err">Встроенная музыка не найдена — переустановите программу. Свои треки работают как обычно.</p>}
         <ul className="music-lib">
           {builtin.map((t) => {
             const on = m.tracks.includes(t.token);
             return (
               <li key={t.id} className={on ? "on" : ""}>
-                <button className="icon play" onClick={() => play(t.id, t.path)} data-tip={playing === t.id ? "Пауза" : "Прослушать"} aria-label="Прослушать">
+                <button className="icon play" onClick={() => play(t.id, t.path)} data-tip={playing === t.id ? "Пауза" : "Прослушать"} aria-label={playing === t.id ? `Пауза «${t.title}»` : `Прослушать «${t.title}»`}>
                   {playing === t.id ? <Pause size={15} /> : <PlayIcon size={15} />}
                 </button>
                 <div className="music-meta">
@@ -358,7 +366,13 @@ function ExportTab() {
 }
 
 export function Inspector() {
-  const [tab, setTab] = useState<Tab>("video");
+  const [tab, setTabRaw] = useState<Tab>("video");
+  // текст и цвет видны только в предпросмотре оформления — переключаемся на него сами
+  const setTab = (t: Tab) => {
+    setTabRaw(t);
+    const s = useStore.getState();
+    if ((t === "text" || t === "look") && s.preview === "clip" && s.project.clips.some((c) => c.enabled)) s.set({ preview: "frame" });
+  };
   return (
     <aside className="inspector" aria-label="Настройки">
       <div className="tabs" role="tablist">
@@ -371,12 +385,12 @@ export function Inspector() {
             ["export", "Экспорт"],
           ] as [Tab, string][]
         ).map(([k, t]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
+          <button key={k} id={`tab-${k}`} role="tab" aria-selected={tab === k} aria-controls="inspector-panel" className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
             {t}
           </button>
         ))}
       </div>
-      <div className="inspector-body">
+      <div className="inspector-body" id="inspector-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === "video" && <VideoTab />}
         {tab === "text" && <TextTab />}
         {tab === "look" && <LookTab />}

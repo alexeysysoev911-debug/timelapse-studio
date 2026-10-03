@@ -77,7 +77,7 @@ fn project_path(st: &AppState, id: &str) -> CmdResult<PathBuf> {
     Ok(st.projects_dir().join(format!("{id}.tlsproj")))
 }
 
-fn allow_project_files(app: &AppHandle, p: &Project) {
+pub(crate) fn allow_project_files(app: &AppHandle, p: &Project) {
     let mut files: Vec<PathBuf> = p.clips.iter().map(|c| c.path.clone()).collect();
     files.extend(p.end_photos.iter().cloned());
     files.extend(p.style.watermark.iter().cloned());
@@ -86,7 +86,7 @@ fn allow_project_files(app: &AppHandle, p: &Project) {
     allow(app, &files);
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn projects_list(app: AppHandle) -> Vec<ProjectMeta> {
     let st = app.state::<AppState>();
     let mut out = vec![];
@@ -131,20 +131,18 @@ pub fn projects_list(app: AppHandle) -> Vec<ProjectMeta> {
     out
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_open(app: AppHandle, id: String) -> CmdResult<Project> {
     let st = app.state::<AppState>();
     let mut p = Project::load(&project_path(&st, &id)?)?;
     p.id = id.clone();
     allow_project_files(&app, &p);
-    let mut s = st.settings();
-    s.last_project = id;
-    st.store_settings(&s);
+    let _ = st.update_settings(|s| s.last_project = id);
     Ok(p)
 }
 
 /// Сохраняет проект в библиотеку (новому проекту присваивается id). Возвращает id.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_store(app: AppHandle, project: Project) -> CmdResult<String> {
     let st = app.state::<AppState>();
     let mut p = project;
@@ -152,15 +150,14 @@ pub fn project_store(app: AppHandle, project: Project) -> CmdResult<String> {
         p.id = new_id();
     }
     p.save(&project_path(&st, &p.id)?)?;
-    let mut s = st.settings();
-    if s.last_project != p.id {
-        s.last_project = p.id.clone();
-        st.store_settings(&s);
+    if st.settings().last_project != p.id {
+        let id = p.id.clone();
+        let _ = st.update_settings(|s| s.last_project = id);
     }
     Ok(p.id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_delete(app: AppHandle, id: String) -> CmdResult<()> {
     let st = app.state::<AppState>();
     let path = project_path(&st, &id)?;
@@ -172,7 +169,7 @@ pub fn project_delete(app: AppHandle, id: String) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_duplicate(app: AppHandle, id: String) -> CmdResult<Project> {
     let st = app.state::<AppState>();
     let mut p = Project::load(&project_path(&st, &id)?)?;
@@ -183,7 +180,7 @@ pub fn project_duplicate(app: AppHandle, id: String) -> CmdResult<Project> {
 }
 
 /// Проект при запуске: последний из библиотеки → старое автосохранение (3.0) → ничего.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn autosave_load(app: AppHandle) -> Option<Project> {
     let st = app.state::<AppState>();
     let last = st.settings().last_project;
@@ -201,16 +198,15 @@ pub fn autosave_load(app: AppHandle) -> Option<Project> {
     p.id = new_id();
     if p.save(&project_path(&st, &p.id).ok()?).is_ok() {
         let _ = std::fs::remove_file(&old);
-        let mut s = st.settings();
-        s.last_project = p.id.clone();
-        st.store_settings(&s);
+        let id = p.id.clone();
+        let _ = st.update_settings(|s| s.last_project = id);
     }
     allow_project_files(&app, &p);
     Some(p)
 }
 
 /// Что программа нашла в именах файлов (материал, слой, время) — для подсказок в полях.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_info(project: Project) -> tls_core::pipeline::ClipInfoText {
     let paths: Vec<&std::path::Path> = project
         .clips
@@ -222,7 +218,7 @@ pub fn project_info(project: Project) -> tls_core::pipeline::ClipInfoText {
 }
 
 /// Открыть ссылку в браузере (только разрешённые адреса).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_link(url: String) -> CmdResult<()> {
     const ALLOWED: &[&str] = &["https://t.me/", "https://github.com/"];
     if !ALLOWED.iter().any(|p| url.starts_with(p)) || url.contains(char::is_whitespace) {
@@ -304,9 +300,19 @@ fn updater(app: &AppHandle) -> CmdResult<tauri_plugin_updater::Updater> {
     use tauri_plugin_updater::UpdaterExt;
     let st = app.state::<AppState>();
     let custom = st.settings().update_endpoint;
-    let mut b = app.updater_builder();
-    if custom.starts_with("https://") {
-        let url = custom.parse().map_err(err)?;
+    let custom = custom.trim();
+    let mut b = app
+        .updater_builder()
+        .timeout(std::time::Duration::from_secs(30));
+    if !custom.is_empty() {
+        if !custom.starts_with("https://") {
+            return Err(err(
+                "Адрес сервера обновлений должен начинаться с https:// (или оставьте поле пустым).",
+            ));
+        }
+        let url = custom
+            .parse()
+            .map_err(|_| err("Адрес сервера обновлений записан с ошибкой."))?;
         b = b.endpoints(vec![url]).map_err(err)?;
     }
     b.build().map_err(err)
@@ -358,17 +364,51 @@ pub async fn update_install(app: AppHandle) -> CmdResult<()> {
     let Some(u) = updater(&app)?.check().await.map_err(err)? else {
         return Err(err("Обновлений нет — у вас последняя версия."));
     };
+    let st = app.state::<AppState>();
+    st.updating.store(true, std::sync::atomic::Ordering::SeqCst);
     let mut downloaded = 0u64;
     let app2 = app.clone();
-    u.download_and_install(
-        move |chunk, total| {
-            downloaded += chunk as u64;
-            let _ = app2.emit("update-progress", UpdateProgress { downloaded, total });
-        },
-        || {},
-    )
-    .await
-    .map_err(|e| err(format!("Не удалось установить обновление: {e}")))?;
+    let bytes = u
+        .download(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = app2.emit("update-progress", UpdateProgress { downloaded, total });
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| {
+            st.updating
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            err(format!("Не удалось скачать обновление: {e}"))
+        })?;
+    // установщик закрывает программу: убеждаемся, что за время загрузки не началась сборка
+    if st.job.lock().map(|j| j.is_some()).unwrap_or(false) {
+        st.updating
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        return Err(err("Идёт сборка — обновление установим после неё."));
+    }
+    u.install(bytes).map_err(|e| {
+        st.updating
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        err(format!("Не удалось установить обновление: {e}"))
+    })?;
     tracing::info!(version = %u.version, "обновление установлено, перезапуск");
     app.restart();
+}
+
+/// Файл проекта из командной строки (двойной щелчок по .tlsproj в Проводнике).
+pub(crate) fn project_arg(args: impl Iterator<Item = String>) -> Option<PathBuf> {
+    args.map(PathBuf::from).find(|p| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("tlsproj"))
+            && p.is_file()
+    })
+}
+
+/// Проект, с которым программу запустили (если запустили двойным щелчком по файлу).
+#[tauri::command]
+pub fn startup_file() -> Option<PathBuf> {
+    project_arg(std::env::args().skip(1))
 }
