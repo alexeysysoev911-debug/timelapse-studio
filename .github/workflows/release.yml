@@ -74,7 +74,10 @@ jobs:
         run: |
           $ver = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $tag = "v$ver"
-          $exe = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) {
+            Write-Error "Тег $env:GITHUB_REF_NAME не совпадает с версией $ver в tauri.conf.json"; exit 1
+          }
+          $exe = Get-ChildItem "target/release/bundle/nsis/*_${ver}_x64-setup.exe" | Select-Object -First 1
           if (-not $exe) { Write-Error "Установщик не найден"; exit 1 }
           $sigFile = "$($exe.FullName).sig"
           if (-not (Test-Path $sigFile)) { Write-Error "Нет подписи обновления $sigFile"; exit 1 }
