@@ -1,7 +1,7 @@
 // Действия пользователя: импорт файлов, проекты, сборка, предпросмотр, обновления.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "./api";
-import { addUnique, baseName, classify, newClip, plural, preflight } from "./logic";
+import { addUnique, baseName, classify, isNewer, newClip, plural, preflight } from "./logic";
 import { renderOverlays } from "./overlay";
 import { currentGen, saveNow, useStore } from "./store";
 import { defaultProject, type Project } from "./types";
@@ -187,7 +187,7 @@ async function freshInfo() {
 
 export async function startBuild(draft = false) {
   const s = st();
-  if (s.building) return;
+  if (s.building || s.mandatory) return;
   const problems = preflight(s.project, s.media);
   const blocking = problems.filter((w) => w.startsWith("Добавьте") || w.startsWith("Выберите"));
   if (blocking.length) {
@@ -302,6 +302,20 @@ export async function loadLookThumbs(force = false) {
   }
 }
 
+/** Реклама и сведения об обновлениях с сервера программы (панель управления). */
+export async function loadRemote() {
+  try {
+    const r = await api.serverConfig();
+    const cur = st().appInfo?.version ?? "0";
+    const u = r.update;
+    // блокируем только по свежему ответу сервера: без интернета обновиться всё равно нельзя
+    const mandatory = r.fresh && u && u.kind === "mandatory" && isNewer(u.version, cur) ? { version: u.version, notes: u.notes } : null;
+    st().set({ remote: r, mandatory });
+  } catch {
+    /* сервер недоступен — программа работает как обычно */
+  }
+}
+
 /** Проверка обновлений. silent — при запуске: молчим, если обновлений нет или нет интернета. */
 export async function checkUpdates(silent = false) {
   if (st().updateChecking) return;
@@ -332,7 +346,8 @@ export async function installUpdate() {
   try {
     await api.updateInstall(); // при успехе программа перезапустится сама
   } catch (e) {
-    st().set({ updateProgress: null });
+    const m = st().mandatory;
+    st().set({ updateProgress: null, mandatory: m ? { ...m, failed: (m.failed ?? 0) + 1 } : null });
     st().toast("error", errorText(e));
   }
 }

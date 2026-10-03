@@ -155,3 +155,13 @@ export function isTyping(t: EventTarget | null): boolean {
   }
   return false;
 }
+
+/** a новее b? Версии вида 3.0.1. */
+export function isNewer(a: string, b: string): boolean {
+  const pa = a.split(".").map((x) => parseInt(x, 10) || 0);
+  const pb = b.split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  }
+  return false;
+}

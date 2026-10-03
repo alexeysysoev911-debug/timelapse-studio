@@ -8,6 +8,7 @@ import { baseName, clipDur, fmtSec, move } from "../logic";
 import { useStore } from "../store";
 import type { Clip } from "../types";
 import { Thumb } from "./Thumb";
+import { AdSlot } from "./AdSlot";
 
 const NO_TRACKS: import("../types").BuiltinTrack[] = [];
 
@@ -199,6 +200,7 @@ export function Library() {
           ))}
         </ul>
       )}
+      <AdSlot slot="1" />
     </aside>
   );
 }

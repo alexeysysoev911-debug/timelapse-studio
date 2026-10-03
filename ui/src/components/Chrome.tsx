@@ -24,6 +24,7 @@ import { api, fileUrl } from "../api";
 import { cancelBuild, newProject, openProjectFile, saveProject, startBuild } from "../actions";
 import { baseName, estimate, fmtSec, plural, preflight } from "../logic";
 import { Modal } from "./Modal";
+import { AdSlot } from "./AdSlot";
 import { setToastHover, useStore } from "../store";
 
 export function TopBar({ onHelp }: { onHelp: () => void }) {
@@ -255,6 +256,7 @@ export function Results() {
             ))}
           </ul>
         )}
+        <AdSlot slot="2" className="results-ad" />
     </Modal>
   );
 }

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Timelapse Studio — таймлапс в готовый ролик для TikTok, Reels и Shorts</title>
+<meta name="description" content="Бесплатная программа для Windows: из таймлапсов 3D-печати и любых процессов за минуту собирает вертикальные и горизонтальные ролики с музыкой, текстами, цветовыми образами, обложкой и описанием.">
+<meta name="theme-color" content="#05070F" id="mtheme">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="%%SITE%%/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:site_name" content="Timelapse Studio">
+<meta property="og:title" content="Timelapse Studio — таймлапс в готовый ролик за минуту">
+<meta property="og:description" content="Музыка в такт, тексты с эмодзи, 9 цветовых образов, сразу все форматы: TikTok, Reels, Shorts, Telegram. Бесплатно, работает на вашем компьютере.">
+<meta property="og:url" content="%%SITE%%/">
+<meta property="og:image" content="%%SITE%%/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/assets/icon-96.png" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script src="/assets/theme.js"></script>
+<link rel="preload" href="/assets/screen-main.webp" as="image" type="image/webp">
+<link rel="stylesheet" href="/assets/site.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Timelapse Studio","operatingSystem":"Windows 10, Windows 11","applicationCategory":"MultimediaApplication","description":"Собирает из таймлапс-клипов готовые ролики для TikTok, Reels, Shorts и Telegram: музыка, переходы в такт, тексты, цветовые образы, обложка и описание.","offers":{"@type":"Offer","price":"0","priceCurrency":"RUB"},"author":{"@type":"Person","name":"Alexey S."},"url":"%%SITE%%/"}
+</script>
+<script src="/assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержанию</a>
+<canvas id="mx" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<div class="wrap">
+
+  <!-- навигация -->
+  <div class="top">
+    <a class="brand" href="/" aria-label="Timelapse Studio — на главную">
+      <span class="logo"><img src="/assets/icon-96.png" alt="" width="46" height="46"></span>
+      <span><b>Timelapse Studio</b><small>таймлапс → готовый ролик</small></span>
+    </a>
+    <div class="spacer"></div>
+    <nav class="nav" aria-label="Основная навигация">
+      <a href="#feats">Возможности</a>
+      <a href="#result">Результат</a>
+      <a href="#looks">Образы</a>
+      <a href="#how">Как работает</a>
+      <a href="#faq">Вопросы</a>
+      <a href="#dl">Скачать</a>
+    </nav>
+    <div class="pill" id="vPill">v <b id="vTop">3.0</b> · Windows 10/11</div>
+    <button class="tgl" id="tgl" type="button" aria-label="Переключить тему оформления" title="Сменить тему">
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
+
+  <main id="main">
+  <!-- герой -->
+  <header class="hero">
+    <div>
+      <span class="kicker"><i></i>Бесплатно · без аккаунтов · работает локально</span>
+      <h1>Таймлапс печати —<br>в <span class="grad">готовый ролик</span><br>за одну минуту</h1>
+      <p class="lead">Timelapse Studio собирает из ваших клипов ролики для <b>TikTok, Reels, Shorts и Telegram</b>: ускоряет под нужную длину, кладёт <b>музыку с переходами в такт</b>, добавляет крупный хук, плашку с материалом и временем печати, <b>цветовой образ</b>, обложку и готовое описание с хэштегами.</p>
+      <div class="cta">
+        <a class="btn dl-link" href="/downloads/latest" rel="nofollow">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg>
+          Скачать бесплатно
+        </a>
+        <a class="btn sec" href="#result">Посмотреть результат</a>
+      </div>
+      <div class="meta">
+        <span class="pill">9:16 · 16:9 · 1:1 · 4:5</span>
+        <span class="pill">MP4 · MOV · MKV · HDR iPhone</span>
+        <span class="pill">Русский интерфейс</span>
+      </div>
+    </div>
+    <div class="shot rv">
+      <div class="glow"></div>
+      <div class="frame" id="tilt">
+        <img src="/assets/screen-main.webp" alt="Главное окно Timelapse Studio: клипы слева, живой предпросмотр вертикального ролика в центре, настройки текста справа" width="1360" height="860" decoding="async" fetchpriority="high">
+      </div>
+      <div class="cap"><b>Живой предпросмотр</b>каждое изменение видно сразу</div>
+    </div>
+  </header>
+
+  <!-- цифры -->
+  <div class="strip">
+    <div class="kpi rv"><div class="n">0 ₽</div><div class="l">бесплатно, без водяных знаков</div></div>
+    <div class="kpi rv"><div class="n" id="kSize">1 файл</div><div class="l">установщик со всем нужным</div></div>
+    <div class="kpi rv"><div class="n">100%</div><div class="l">локально: видео не уходят в сеть</div></div>
+    <div class="kpi rv"><div class="n">4 формата</div><div class="l">за одну сборку</div></div>
+  </div>
+
+  <!-- возможности -->
+  <section id="feats" aria-labelledby="feats-h">
+    <h2 class="h2 rv" id="feats-h">Один инструмент — <span class="grad">весь путь</span> от клипа до поста</h2>
+    <p class="hint rv">Для мейкеров, 3D-печати, стройки, рисования, цветов и всего, что снимают таймлапсом. Перетащили клипы → настроили вид → получили ролики, обложки и описания в папке «Видео».</p>
+    <div class="feats">
+      <article class="feat wide rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.5"/><rect x="2" y="7" width="20" height="10" rx="2.5" opacity=".55"/></svg></div>
+        <h3>Все площадки за одну сборку</h3>
+        <p>Вертикальный <b>9:16</b> для TikTok, Reels и Shorts, горизонтальный <b>16:9</b> для Telegram и YouTube, а также <b>1:1</b> и <b>4:5</b>. Видео с телефона, HDR iPhone и любые разрешения приводятся к одному виду: размытый фон, обрезка или поля — на выбор. Длина ролика задаётся в секундах, ускорение считается само.</p>
+      </article>
+      <article class="feat rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+        <h3>Музыка в такт</h3>
+        <p><b>3 встроенных трека</b> без претензий от площадок или ваши файлы. Переходы между клипами попадают в бит, громкость выравнивается по стандарту стриминга.</p>
+      </article>
+      <article class="feat rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></div>
+        <h3>Хук и плашка</h3>
+        <p>Крупная фраза в первые секунды, <b>6 шрифтов с кириллицей</b> и эмодзи. Материал, слой и время печати программа берёт <b>из имени файла</b>.</p>
+      </article>
+      <article class="feat rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="12.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="13.5" r="2.5"/><path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 3-4 3h-2a2 2 0 0 0-1.6 3.2A2 2 0 0 1 12 22Z"/></svg></div>
+        <h3>Цветовые образы</h3>
+        <p><b>9 образов</b> в духе фильтров Instagram, сила регулируется. Автокоррекция и чёткость — одной галочкой. Сравнение «до / после» прямо в кадре.</p>
+      </article>
+      <article class="feat rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg></div>
+        <h3>Чистый таймлапс</h3>
+        <p>Убирает <b>мерцание</b> от освещения, <b>дрожание</b> камеры и «рывки» при ускорении. Бесшовный повтор — ролик смотрят по кругу.</p>
+      </article>
+      <article class="feat rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>Живой предпросмотр</h3>
+        <p>Кадр со всем оформлением меняется <b>сразу</b>, пока вы печатаете текст. <b>Пробный ролик</b> с музыкой собирается за секунды.</p>
+      </article>
+      <article class="feat wide rv">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></div>
+        <h3>Обложка, описание и порядок</h3>
+        <p>Рядом с каждым роликом — <b>обложка</b> и <b>текст поста с хэштегами</b>: скопировали — опубликовали. Проекты <b>сохраняются сами</b> и открываются из «Мои проекты», а после сборки исходники можно автоматически отправить в архив или Корзину.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- рекламный слот 1 (наполняется с сервера) -->
+  <aside class="promo" data-slot="1" hidden aria-label="Реклама"></aside>
+
+  <!-- результат -->
+  <section id="result" aria-labelledby="result-h">
+    <h2 class="h2 rv" id="result-h">Вот что получается <span class="grad">из одного клипа</span></h2>
+    <p class="hint rv">Шесть часов печати вазы → 6 секунд ролика: хук, ник канала, плашка с материалом и временем, полоса прогресса, музыка и финальное фото. Ни одной ручной правки.</p>
+    <div class="result">
+      <div class="phone rv">
+        <video id="demo" src="/assets/result-9x16.mp4" poster="/assets/result-poster.webp" muted loop playsinline preload="none" width="540" height="960" aria-label="Пример готового вертикального ролика"></video>
+        <button class="sound" id="sound" type="button" aria-pressed="false" aria-label="Включить звук">
+          <svg class="off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m23 9-6 6m0-6 6 6"/></svg>
+          <svg class="on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+        </button>
+      </div>
+      <ul class="checks">
+        <li class="rv"><b>Хук в первые 2,5 секунды</b><span>Зритель решает, смотреть ли дальше, — фраза крупно и по центру.</span></li>
+        <li class="rv"><b>Безопасная зона площадок</b><span>Тексты не уходят под кнопки и подписи TikTok и Reels — это проверяется в предпросмотре.</span></li>
+        <li class="rv"><b>Полоса прогресса</b><span>Тонкая линия внизу — ролики с ней досматривают чаще.</span></li>
+        <li class="rv"><b>Финальное фото</b><span>Плавный наезд на готовый результат — самый «сохраняемый» кадр.</span></li>
+        <li class="rv"><b>Правильный цвет</b><span>Метки BT.709 и громкость −14 LUFS: в соцсетях ролик не выцветает и не «орёт».</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- образы -->
+  <section id="looks" aria-labelledby="looks-h">
+    <h2 class="h2 rv" id="looks-h">Образ ролика — <span class="grad">одним касанием</span></h2>
+    <p class="hint rv">На плитках в программе — ваш собственный кадр в каждом образе, как фильтры в Instagram. Ниже — тот же финальный кадр вазы.</p>
+    <div class="looksbox rv">
+      <div class="looks">
+        <figure><img src="/assets/look-none.webp" alt="Без образа" width="240" height="294" loading="lazy" decoding="async"><figcaption>Без образа</figcaption></figure>
+        <figure><img src="/assets/look-vivid.webp" alt="Образ «Сочный»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Сочный</figcaption></figure>
+        <figure><img src="/assets/look-clean_bright.webp" alt="Образ «Чистый светлый»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Чистый светлый</figcaption></figure>
+        <figure><img src="/assets/look-warm_film.webp" alt="Образ «Тёплая плёнка»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Тёплая плёнка</figcaption></figure>
+        <figure><img src="/assets/look-golden_hour.webp" alt="Образ «Золотой час»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Золотой час</figcaption></figure>
+        <figure><img src="/assets/look-teal_orange.webp" alt="Образ «Кино: бирюза и оранж»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Кино</figcaption></figure>
+        <figure><img src="/assets/look-cool_tech.webp" alt="Образ «Холодный техно»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Холодный техно</figcaption></figure>
+        <figure><img src="/assets/look-pastel.webp" alt="Образ «Пастель»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Пастель</figcaption></figure>
+        <figure><img src="/assets/look-matte.webp" alt="Образ «Матовый»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Матовый</figcaption></figure>
+        <figure><img src="/assets/look-bw_contrast.webp" alt="Образ «Ч/Б контраст»" width="240" height="294" loading="lazy" decoding="async"><figcaption>Ч/Б контраст</figcaption></figure>
+      </div>
+      <div class="shot2"><img src="/assets/screen-looks.webp" alt="Вкладка «Цвет» в программе: сетка образов с миниатюрами кадра" width="1360" height="860" loading="lazy" decoding="async"></div>
+    </div>
+  </section>
+
+  <!-- как работает -->
+  <section id="how" aria-labelledby="how-h">
+    <h2 class="h2 rv" id="how-h">Три шага — <span class="grad">и ролики готовы</span></h2>
+    <p class="hint rv">Без монтажа и обучения: программа построена вокруг одной задачи — быстро превратить таймлапс в пост.</p>
+    <ol class="steps">
+      <li class="step rv"><div class="num" aria-hidden="true">01</div><h3>Перетащите файлы</h3><p>Клипы, фото готового результата и музыку — прямо в окно, можно целой папкой. Программа сама разложит, что есть что, и проверит каждый файл.</p></li>
+      <li class="step rv"><div class="num" aria-hidden="true">02</div><h3>Настройте вид</h3><p>Хук, ник, шрифт, образ и длина ролика. Живой предпросмотр показывает кадр со всем оформлением, «Пробный ролик» собирается за секунды.</p></li>
+      <li class="step rv"><div class="num" aria-hidden="true">03</div><h3>Соберите</h3><p>Одна кнопка — все форматы сразу, с видеокартой, если она есть. Ролики, обложки и описания ждут в папке «Видео». Проект сохраняется сам.</p></li>
+    </ol>
+  </section>
+
+  <!-- приватность -->
+  <section aria-label="Приватность">
+    <div class="priv rv">
+      <div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.6"/></svg></div>
+      <div>
+        <b>Ваши видео не покидают компьютер</b>
+        <span>Вся обработка — локально на вашем ПК: без облака, без аккаунтов и без загрузки клипов куда-либо. Программа лишь проверяет обновления (они подписаны цифровой подписью), может показать короткое объявление и сообщает анонимную статистику запусков — её можно выключить в «О программе». <a href="/privacy">Подробнее</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- вопросы -->
+  <section id="faq" aria-labelledby="faq-h">
+    <h2 class="h2 rv" id="faq-h">Частые <span class="grad">вопросы</span></h2>
+    <div class="faq">
+      <details class="rv"><summary>Это правда бесплатно?</summary><p>Да. Без пробного периода, без водяного знака программы и без ограничений по количеству роликов.</p></details>
+      <details class="rv"><summary>Какой компьютер нужен?</summary><p>Windows 10 или 11 (64-bit). Подойдёт любой современный ноутбук; если есть видеокарта NVIDIA, AMD или Intel, сборка идёт заметно быстрее.</p></details>
+      <details class="rv"><summary>Можно ли использовать встроенную музыку в TikTok и Reels?</summary><p>Да. Три встроенных трека — оригинальные, написаны для программы и разрешены для любых роликов, в том числе коммерческих.</p></details>
+      <details class="rv"><summary>Только для 3D-печати?</summary><p>Нет. В программе есть тематики для 3D-печати, рукоделия, рисования, кулинарии, стройки и ремонта и универсальная — меняются подписи полей и хэштеги в описании.</p></details>
+      <details class="rv"><summary>Windows пишет «защитил ваш компьютер» — это нормально?</summary><p>Так Windows реагирует на новые программы без платного сертификата. Нажмите «Подробнее» → «Выполнить в любом случае». Обновления программы проверяются цифровой подписью разработчика.</p></details>
+      <details class="rv"><summary>Как обновлять программу?</summary><p>Никак — она сама предложит новую версию и установит её в один клик. Проекты и настройки сохраняются.</p></details>
+    </div>
+  </section>
+
+  <!-- рекламный слот 2 (наполняется с сервера) -->
+  <aside class="promo" data-slot="2" hidden aria-label="Реклама"></aside>
+
+  <!-- скачать -->
+  <section class="dl rv" id="dl" aria-labelledby="dl-h">
+    <h2 id="dl-h">Скачать Timelapse Studio</h2>
+    <p>Бесплатно для Windows 10/11 (64-bit). Установка за полминуты, видеодвижок уже внутри, обновления прилетают сами.</p>
+    <a class="btn dl-link" href="/downloads/latest" rel="nofollow">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m6 11 6 6 6-6"/><path d="M4 21h16"/></svg>
+      <span id="dlName">TimelapseStudio-Setup.exe</span>
+    </a>
+    <div class="meta">
+      <span class="pill">версия <b id="vDl">3.0</b></span>
+      <span class="pill" id="vSize">один установщик</span>
+      <span class="pill" id="vDate">Windows 10/11 · x64</span>
+    </div>
+    <p class="soon" id="soon" hidden>Первая версия выходит совсем скоро — загляните чуть позже.</p>
+    <span class="tg">Вопросы и предложения — <a href="https://t.me/alexeyalesha8" rel="noopener noreferrer" target="_blank">Telegram @alexeyalesha8</a></span>
+  </section>
+  </main>
+
+  <footer>
+    <span>© 2026 Timelapse Studio · Alexey S.</span>
+    <a href="/privacy">Конфиденциальность</a>
+    <a href="/license">Лицензионное соглашение</a>
+    <span class="spacer"></span>
+    <span>Музыка · Тексты · Образы · Форматы · Обложки</span>
+  </footer>
+  <div class="legal">Программа предназначена для оформления собственных видеозаписей. Пользователь самостоятельно отвечает за соблюдение прав на используемые материалы и законодательства РФ. Названия площадок принадлежат их правообладателям.</div>
+</div>
+</body>
+</html>

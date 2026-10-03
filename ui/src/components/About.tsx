@@ -96,16 +96,24 @@ export function About() {
           )}
           {settings && <Toggle label="Проверять обновления при запуске" checked={settings.auto_update_check} onChange={(v) => setSetting({ auto_update_check: v })} />}
           {settings && (
+            <Toggle
+              label="Анонимная статистика запусков"
+              hint="Только версия программы и случайный номер установки — без файлов, имён и IP. Помогает понять, сколько людей пользуется программой."
+              checked={settings.telemetry}
+              onChange={(v) => setSetting({ telemetry: v })}
+            />
+          )}
+          {settings && (
             <div className="field">
               <div className="field-label">
-                <span>Сервер обновлений</span>
+                <span>Сервер программы</span>
               </div>
               <input
                 type="text"
-                placeholder={info?.update_endpoint_default ?? ""}
-                value={settings.update_endpoint}
-                onChange={(e) => setSetting({ update_endpoint: e.target.value.trim() })}
-                data-tip="Адрес файла latest.json. Пусто — стандартный (GitHub Releases). Обновления всегда проверяются по цифровой подписи."
+                placeholder={info?.server_default ?? ""}
+                value={settings.server_url}
+                onChange={(e) => setSetting({ server_url: e.target.value.trim() })}
+                data-tip="Откуда приходят обновления и новости программы. Пусто — стандартный. Если сервер недоступен, обновления берутся с GitHub. Установщик всегда проверяется по цифровой подписи."
               />
             </div>
           )}

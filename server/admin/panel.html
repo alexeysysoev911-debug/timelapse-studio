@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#05070F">
+<title>Timelapse Studio — панель</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/admin/panel.css">
+<script src="/admin/panel.js" defer></script>
+</head>
+<body>
+<canvas id="mx" aria-hidden="true"></canvas>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg></div>
+      <div><h1>Timelapse Studio</h1><p class="sub">Панель управления программой и сайтом</p></div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="srv"><i></i>server: …</span>
+    <a class="btn sec sm" id="siteLink" href="/" target="_blank" rel="noopener" hidden>Открыть сайт</a>
+    <button class="btn sec sm" id="refresh" hidden>Обновить панель</button>
+    <button class="out" id="logout" hidden>Выйти</button>
+  </div>
+
+  <!-- вход -->
+  <div class="card" id="login" hidden>
+    <h2>Вход</h2>
+    <p class="hint">Пароль панели. Сессия хранится в защищённом cookie и завершается через 12 часов или по кнопке «Выйти».</p>
+    <form id="loginForm">
+      <label class="f" for="pw">Пароль</label>
+      <input type="password" id="pw" autocomplete="current-password" required>
+      <div class="actions"><button class="btn" type="submit" id="loginBtn">Войти</button></div>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <div class="grid dash">
+      <div class="card kpi"><div class="n skel" id="kVer">&nbsp;</div><div class="l">Текущая версия</div><div class="s" id="kVerS">—</div></div>
+      <div class="card kpi"><div class="n skel" id="kDl">&nbsp;</div><div class="l">Скачиваний</div><div class="s" id="kDlS">—</div></div>
+      <div class="card kpi"><div class="n skel" id="kRuns">&nbsp;</div><div class="l">Запусков программы</div><div class="s" id="kRunsS">—</div></div>
+      <div class="card kpi"><div class="n skel" id="kVis">&nbsp;</div><div class="l">Посетителей сайта сегодня</div><div class="s" id="kVisS">—</div></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab sel" role="tab" data-tab="upd">Обновление</button>
+      <button class="tab" role="tab" data-tab="ads">Реклама</button>
+      <button class="tab" role="tab" data-tab="stats">Статистика</button>
+      <button class="tab" role="tab" data-tab="hist">История</button>
+      <button class="tab" role="tab" data-tab="set">Настройки</button>
+    </div>
+
+    <!-- обновление -->
+    <section data-panel="upd">
+      <div class="grid g2">
+        <div class="card">
+          <h2>1. Загрузить установщик</h2>
+          <p class="hint">Перетащите сюда <b>оба файла</b> из сборки GitHub: <code>…x64-setup.exe</code> и <code>…x64-setup.exe.sig</code> (подпись — без неё программы не примут обновление).</p>
+          <label class="drop" id="drop" tabindex="0">
+            <input type="file" id="file" accept=".exe,.sig" multiple hidden>
+            <b>Отпустите .exe и .sig здесь</b>
+            <span class="hint">или нажмите для выбора</span>
+          </label>
+          <div class="bar" id="bar"><i></i></div>
+          <div id="stg"></div>
+        </div>
+        <div class="card">
+          <h2>2. Выпустить версию</h2>
+          <p class="hint">Сейчас на сервере: <b id="curV">—</b>. После выпуска программы у пользователей предложат обновиться, а сайт покажет новую версию.</p>
+          <label class="f" for="nv">Новая версия <small>должна быть больше всех прежних</small></label>
+          <div class="row row-auto">
+            <input type="text" id="nv" placeholder="3.0.1" inputmode="decimal" autocomplete="off">
+            <button class="btn sec sm" id="bumpBtn" type="button">Подставить следующую</button>
+          </div>
+          <label class="f">Тип</label>
+          <div class="chips">
+            <label class="chip"><input type="radio" name="kind" value="normal" checked> Обычное</label>
+            <label class="chip"><input type="radio" name="kind" value="major"> Крупное</label>
+            <label class="chip danger"><input type="radio" name="kind" value="mandatory"> Обязательное</label>
+          </div>
+          <p class="hint mt8" id="kindHint">Пользователь увидит предложение обновиться и сам решит когда.</p>
+          <label class="f" for="notes">Что нового</label>
+          <textarea id="notes" placeholder="• Улучшения и исправления" maxlength="4000"></textarea>
+          <div class="actions"><button class="btn go" id="relBtn">Выпустить версию</button></div>
+        </div>
+      </div>
+      <div class="note info">Можно не скачивать файлы вручную: добавьте в GitHub секреты <b>TLS_SERVER_URL</b> и <b>TLS_DEPLOY_KEY</b> (вкладка «Настройки») — сборка «Release» сама положит установщик и подпись сюда, останется нажать «Выпустить».</div>
+    </section>
+
+    <!-- реклама -->
+    <section data-panel="ads" hidden>
+      <div class="note info mb16">Можно: <b>только текст</b>, <b>только картинку</b> или всё вместе. Пустой или выключенный блок не показывается. В программе изменения появятся при следующем запуске, на сайте — сразу.</div>
+      <h2 class="group">В программе</h2>
+      <div class="grid g2" id="slots-app"></div>
+      <h2 class="group">На сайте</h2>
+      <div class="grid g2" id="slots-site"></div>
+    </section>
+
+    <!-- статистика -->
+    <section data-panel="stats" hidden>
+      <div class="card">
+        <h2>Программа и сайт <span class="spacer"></span>
+          <span class="chips m0">
+            <label class="chip"><input type="radio" name="days" value="14"> 14 дней</label>
+            <label class="chip"><input type="radio" name="days" value="30" checked> 30 дней</label>
+            <label class="chip"><input type="radio" name="days" value="90"> 90 дней</label>
+          </span>
+        </h2>
+        <p class="hint">Анонимно: программа сообщает только версию и случайный номер установки, сайт — хэш посещения с ежедневно меняющимся ключом. IP-адреса не сохраняются.</p>
+        <div class="grid dash mt6">
+          <div class="kpi"><div class="n" id="sAll">—</div><div class="l">Запусков программы</div></div>
+          <div class="kpi"><div class="n" id="sDev">—</div><div class="l">Уникальных устройств</div></div>
+          <div class="kpi"><div class="n" id="sNew">—</div><div class="l">Новых установок</div></div>
+          <div class="kpi"><div class="n" id="sVis">—</div><div class="l">Посетителей сайта за период</div></div>
+        </div>
+        <label class="f">Устройства в день</label>
+        <div class="chart" id="chart"></div>
+        <div class="axis"><span class="ax0"></span><span class="ax1"></span></div>
+        <div class="legend"><span><i></i>устройств за день</span><span><i class="nw"></i>новые установки</span></div>
+        <label class="f">Посетители сайта в день</label>
+        <div class="chart small" id="chart2"></div>
+        <div class="axis"><span class="ax0"></span><span class="ax1"></span></div>
+        <div class="grid g2 mt6">
+          <div>
+            <label class="f">Версии у пользователей <small>за период, по устройствам</small></label>
+            <div class="vers" id="vers"></div>
+          </div>
+          <div>
+            <label class="f">Скачивания по версиям</label>
+            <div class="vers" id="dls"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- история -->
+    <section data-panel="hist" hidden>
+      <div class="card">
+        <h2>История выпусков</h2>
+        <p class="hint">Текущая — сверху. «Откат» делает выбранную версию текущей для сайта и новых установок; у кого уже стоит более новая — та и останется (программы не понижают версию).</p>
+        <div id="hist"></div>
+      </div>
+    </section>
+
+    <!-- настройки -->
+    <section data-panel="set" hidden>
+      <div class="grid g2">
+        <div class="card">
+          <h2>Адреса</h2>
+          <p class="hint">Сайт, обновления и ссылка на скачивание.</p>
+          <label class="f">Сайт</label><div class="mono" id="aBase">—</div>
+          <label class="f">Файл обновлений (для программы)</label><div class="mono" id="aLatest">—</div>
+          <label class="f">Скачать последнюю версию (для людей)</label><div class="mono" id="aDl">—</div>
+          <div class="actions"><button class="btn sec sm" id="copyDl">Скопировать ссылку на скачивание</button></div>
+        </div>
+        <div class="card">
+          <h2>Автозагрузка из GitHub</h2>
+          <p class="hint">Добавьте в репозитории: <b>Settings → Secrets and variables → Actions</b> два секрета. Сборка «Release» будет класть установщик сюда сама.</p>
+          <label class="f">TLS_SERVER_URL</label><div class="mono" id="dUrl">—</div>
+          <label class="f">TLS_DEPLOY_KEY <small>как пароль: никому не показывайте</small></label>
+          <div class="mono" id="dKey">••••••••••••••••</div>
+          <div class="actions">
+            <button class="btn sec sm" id="newKey">Создать новый ключ</button>
+            <button class="btn sec sm" id="copyKey" hidden>Скопировать ключ</button>
+          </div>
+          <p class="hint mt10">Ключ показывается один раз после создания. Старый ключ сразу перестаёт работать. Текущий ключ можно посмотреть на сервере: <code>server.py deploy-key</code>.</p>
+        </div>
+        <div class="card">
+          <h2>Пароль панели</h2>
+          <form id="pwForm">
+            <label class="f" for="pwOld">Текущий пароль</label><input type="password" id="pwOld" autocomplete="current-password" required>
+            <label class="f" for="pwNew">Новый пароль <small>минимум 10 символов</small></label><input type="password" id="pwNew" autocomplete="new-password" minlength="10" required>
+            <div class="actions"><button class="btn" type="submit">Сменить пароль</button></div>
+          </form>
+          <p class="hint mt10">После смены пароля завершаются все сессии, в том числе на других устройствах.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

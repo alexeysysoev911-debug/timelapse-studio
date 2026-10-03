@@ -13,6 +13,7 @@ import type {
   Project,
   ProjectMeta,
   Settings,
+  RemoteConfig,
   UpdateInfo,
 } from "./types";
 
@@ -49,6 +50,9 @@ export const api = {
   quitAfterCancel: () => invoke<void>("quit_after_cancel"),
   allowFiles: (paths: string[]) => invoke<void>("allow_files", { paths }),
   updateCheck: () => invoke<UpdateInfo>("update_check"),
+  serverConfig: () => invoke<RemoteConfig>("server_config"),
+  openAd: (url: string) => invoke<void>("open_ad", { url }),
+  openDownloadPage: () => invoke<void>("open_download_page"),
   updateInstall: () => invoke<void>("update_install"),
 };
 

@@ -6,9 +6,6 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 use tls_core::project::Project;
 
-pub const DEFAULT_UPDATE_ENDPOINT: &str =
-    "https://github.com/alexeysysoev911-debug/timelapse-studio/releases/latest/download/latest.json";
-
 // ---------------- встроенная музыка ----------------
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -299,23 +296,28 @@ pub struct UpdateInfo {
 fn updater(app: &AppHandle) -> CmdResult<tauri_plugin_updater::Updater> {
     use tauri_plugin_updater::UpdaterExt;
     let st = app.state::<AppState>();
-    let custom = st.settings().update_endpoint;
+    let custom = st.settings().server_url;
     let custom = custom.trim();
-    let mut b = app
-        .updater_builder()
-        .timeout(std::time::Duration::from_secs(30));
-    if !custom.is_empty() {
-        if !custom.starts_with("https://") {
-            return Err(err(
-                "Адрес сервера обновлений должен начинаться с https:// (или оставьте поле пустым).",
-            ));
-        }
-        let url = custom
-            .parse()
-            .map_err(|_| err("Адрес сервера обновлений записан с ошибкой."))?;
-        b = b.endpoints(vec![url]).map_err(err)?;
+    if !custom.is_empty() && !custom.starts_with("https://") {
+        return Err(err(
+            "Адрес сервера программы должен начинаться с https:// (или оставьте поле пустым).",
+        ));
     }
-    b.build().map_err(err)
+    // сначала свой сервер, при его недоступности — GitHub Releases
+    let primary = format!("{}/updates/latest.json", crate::remote::server_base(&st));
+    let mut urls = vec![];
+    for u in [primary.as_str(), crate::remote::GITHUB_LATEST] {
+        urls.push(
+            u.parse()
+                .map_err(|_| err("Адрес сервера программы записан с ошибкой."))?,
+        );
+    }
+    app.updater_builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .endpoints(urls)
+        .map_err(err)?
+        .build()
+        .map_err(err)
 }
 
 #[tauri::command]

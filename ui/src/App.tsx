@@ -5,9 +5,10 @@ import { listen } from "@tauri-apps/api/event";
 import { AlertOctagon, Upload } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { api, errorText, onBuildDone, onBuildEvent, onCloseRequested, onUpdateProgress } from "./api";
-import { cancelBuild, checkUpdates, importPaths, newProject, openProjectFile, refreshMedia, renderFrame, saveProject, startBuild } from "./actions";
+import { cancelBuild, checkUpdates, importPaths, loadRemote, newProject, openProjectFile, refreshMedia, renderFrame, saveProject, startBuild } from "./actions";
 import { enableAutosave, saveNow, useStore } from "./store";
 import { About } from "./components/About";
+import { MandatoryUpdate } from "./components/Mandatory";
 import { Home } from "./components/Home";
 import { TooltipLayer } from "./components/Tooltip";
 import { defaultProject, type AppInfo } from "./types";
@@ -69,6 +70,7 @@ export default function App() {
         // программу открыли двойным щелчком по файлу проекта
         const file = await api.startupFile().catch(() => null);
         if (file) await openProjectFile(file);
+        loadRemote();
         if (settings.auto_update_check) setTimeout(() => checkUpdates(true), 4000);
       } catch (e) {
         setFatal(errorText(e));
@@ -136,11 +138,11 @@ export default function App() {
   useEffect(() => {
     const un = getCurrentWebview().onDragDropEvent((ev) => {
       const t = ev.payload.type;
-      if (t === "enter" || t === "over") setDragOver(true);
+      if (t === "enter" || t === "over") setDragOver(!useStore.getState().mandatory);
       else if (t === "leave") setDragOver(false);
       else if (t === "drop") {
         setDragOver(false);
-        importPaths(ev.payload.paths);
+        if (!useStore.getState().mandatory) importPaths(ev.payload.paths);
       }
     });
     return () => {
@@ -152,6 +154,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
+      if (s.mandatory) return; // пока не установлено обязательное обновление, работа недоступна
       const typing = isTyping(e.target);
       const ctrl = e.ctrlKey || e.metaKey;
       const code = e.code;
@@ -198,6 +201,12 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [help]);
+
+  // реклама и новости сервера обновляются раз в 6 часов, если программа долго открыта
+  useEffect(() => {
+    const id = setInterval(() => loadRemote(), 6 * 3600 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // свой шрифт не загрузился — ролик соберётся встроенным, но пользователь должен об этом знать
   useEffect(() => {
@@ -258,6 +267,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <MandatoryUpdate />
       <Toasts />
     </div>
   );

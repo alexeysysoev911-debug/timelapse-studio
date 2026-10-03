@@ -4302,6 +4302,8 @@ name = "timelapse-studio"
 version = "3.0.0"
 dependencies = [
  "base64 0.22.1",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sha1_smol",

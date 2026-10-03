@@ -171,7 +171,22 @@ export interface AppInfo {
   builtin_music: BuiltinTrack[];
   looks: [string, string][];
   fonts_dir: string | null;
-  update_endpoint_default: string;
+  server_default: string;
+}
+
+/** Рекламный блок с сервера (панель управления). */
+export interface RemoteAd {
+  title: string;
+  text: string;
+  url: string;
+  alt: string;
+  img_path: string | null;
+}
+
+export interface RemoteConfig {
+  ads: Partial<Record<"1" | "2", RemoteAd>>;
+  update: { version: string; kind: "normal" | "major" | "mandatory" | string; notes: string } | null;
+  fresh: boolean;
 }
 
 export interface BuiltinTrack {
@@ -234,7 +249,9 @@ export interface Settings {
   notify: boolean;
   prevent_sleep: boolean;
   auto_update_check: boolean;
-  update_endpoint: string;
+  server_url: string;
+  device_id: string;
+  telemetry: boolean;
   last_project: string;
 }
 

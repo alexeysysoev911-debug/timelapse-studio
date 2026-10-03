@@ -2,6 +2,7 @@
 //! Никакого HTTP-сервера: интерфейс общается с ядром только через IPC Tauri.
 mod commands;
 mod extra;
+mod remote;
 mod state;
 mod system;
 
@@ -76,6 +77,9 @@ pub fn run() {
             extra::update_check,
             extra::update_install,
             extra::startup_file,
+            remote::server_config,
+            remote::open_ad,
+            remote::open_download_page,
             commands::app_info,
             commands::probe_files,
             commands::list_folder,

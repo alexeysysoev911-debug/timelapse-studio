@@ -23,6 +23,10 @@ pub struct AppState {
     pub settings_lock: Mutex<()>,
     /// Идёт установка обновления — новые сборки не запускаем.
     pub updating: std::sync::atomic::AtomicBool,
+    /// Ссылки рекламных блоков, полученные с сервера (только их можно открыть).
+    pub ad_urls: Mutex<Vec<String>>,
+    /// Запуск уже учтён в статистике (периодические обновления рекламы его не повторяют).
+    pub launch_counted: std::sync::atomic::AtomicBool,
 }
 
 /// Настройки программы (не проекта).
@@ -38,8 +42,12 @@ pub struct Settings {
     pub prevent_sleep: bool,
     /// Проверять обновления при запуске.
     pub auto_update_check: bool,
-    /// Свой сервер обновлений (адрес latest.json); пусто — стандартный.
-    pub update_endpoint: String,
+    /// Свой адрес сервера программы (https://…); пусто — стандартный.
+    pub server_url: String,
+    /// Случайный номер установки для анонимной статистики запусков.
+    pub device_id: String,
+    /// Отправлять анонимную статистику запусков (версия + номер установки).
+    pub telemetry: bool,
     /// Последний открытый проект библиотеки.
     pub last_project: String,
 }
@@ -54,7 +62,9 @@ impl Default for Settings {
             notify: true,
             prevent_sleep: true,
             auto_update_check: true,
-            update_endpoint: String::new(),
+            server_url: String::new(),
+            device_id: String::new(),
+            telemetry: true,
             last_project: String::new(),
         }
     }
@@ -103,6 +113,8 @@ impl AppState {
             job: Mutex::new(None),
             settings_lock: Mutex::new(()),
             updating: std::sync::atomic::AtomicBool::new(false),
+            ad_urls: Mutex::new(Vec::new()),
+            launch_counted: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -191,6 +203,9 @@ fn cleanup_cache(cache: &std::path::Path) {
             .and_then(|m| m.modified())
             .map(|t| t < cutoff)
             .unwrap_or(false);
+        if name == "ads" {
+            continue; // картинки рекламы нужны и без интернета; лишние удаляет remote.rs
+        }
         if name.starts_with("build-") || name.starts_with("frame-") {
             let _ = std::fs::remove_dir_all(&p).or_else(|_| std::fs::remove_file(&p));
         } else if old {

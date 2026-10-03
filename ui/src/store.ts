@@ -1,7 +1,7 @@
 // Состояние приложения: проект с историей изменений (Ctrl+Z / Ctrl+Y), автосохранение в библиотеку.
 import { create } from "zustand";
 import { api } from "./api";
-import type { AppInfo, BuildReport, ClipInfoText, LookThumb, ProbeItem, Project, Settings, UpdateInfo } from "./types";
+import type { AppInfo, BuildReport, ClipInfoText, LookThumb, ProbeItem, Project, RemoteConfig, Settings, UpdateInfo } from "./types";
 import { defaultProject } from "./types";
 
 const HISTORY_LIMIT = 200;
@@ -56,6 +56,10 @@ interface S {
   update: UpdateInfo | null;
   updateError: string | null;
   updateChecking: boolean;
+  /** Реклама и сведения об обновлении с сервера программы. */
+  remote: RemoteConfig | null;
+  /** Сервер требует обязательное обновление — работа заблокирована до установки. */
+  mandatory: { version: string; notes: string; failed?: number } | null;
   updateProgress: number | null;
   toasts: Toast[];
 
@@ -116,6 +120,8 @@ export const useStore = create<S>((set, get) => ({
   update: null,
   updateError: null,
   updateChecking: false,
+  remote: null,
+  mandatory: null,
   updateProgress: null,
   toasts: [],
 

@@ -33,7 +33,7 @@ pub struct AppInfo {
     builtin_music: Vec<crate::extra::BuiltinTrack>,
     looks: Vec<(String, String)>,
     fonts_dir: Option<PathBuf>,
-    update_endpoint_default: String,
+    server_default: String,
 }
 
 #[tauri::command]
@@ -42,7 +42,7 @@ pub async fn app_info(app: AppHandle) -> CmdResult<AppInfo> {
         let st = app.state::<AppState>();
         let tools = st.tools();
         let info = AppInfo {
-            version: env!("CARGO_PKG_VERSION").into(),
+            version: app.package_info().version.to_string(),
             ffmpeg: tools.as_ref().ok().map(|t| t.ffmpeg.display().to_string()),
             ffmpeg_error: tools.err(),
             default_out_dir: st.out_dir(),
@@ -55,7 +55,7 @@ pub async fn app_info(app: AppHandle) -> CmdResult<AppInfo> {
                 .map(|(a, b)| (a.to_string(), b.to_string()))
                 .collect(),
             fonts_dir: st.res.fonts_dir.clone(),
-            update_endpoint_default: crate::extra::DEFAULT_UPDATE_ENDPOINT.into(),
+            server_default: crate::remote::DEFAULT_SERVER.into(),
         };
         Ok(info)
     })
@@ -455,9 +455,11 @@ pub fn settings_store(st: State<AppState>, settings: Settings) -> CmdResult<()> 
     Ok(st.update_settings(|s| {
         let last = std::mem::take(&mut s.last_project);
         let recent = std::mem::take(&mut s.recent);
+        let device = std::mem::take(&mut s.device_id);
         *s = settings;
         s.last_project = last;
         s.recent = recent;
+        s.device_id = device;
     })?)
 }
 
