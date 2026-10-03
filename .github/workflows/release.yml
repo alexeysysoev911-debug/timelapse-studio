@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -19,10 +19,14 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    permissions:
+      contents: write   # публикация GitHub Release — только этой задаче
     env:
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
       # подпись кода (убирает «Windows защитил ваш компьютер») — когда заданы секреты Azure Trusted Signing
       HAS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+      # автозагрузка в панель управления на своём сервере
+      HAS_SERVER: ${{ secrets.TLS_DEPLOY_KEY != '' && secrets.TLS_SERVER_URL != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -31,6 +35,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: ui/package-lock.json }
+      - name: Версия одинакова во всех файлах
+        shell: pwsh
+        run: |
+          $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $npm = (Get-Content ui/package.json -Raw | ConvertFrom-Json).version
+          $cargo = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          Write-Host "tauri.conf.json=$tauri  ui/package.json=$npm  Cargo.toml=$cargo"
+          if ($tauri -ne $npm -or $tauri -ne $cargo) {
+            Write-Error "Версии не совпадают — поднимите номер во всех трёх файлах одинаково"; exit 1
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$tauri") {
+            Write-Error "Тег $env:GITHUB_REF_NAME не совпадает с версией $tauri"; exit 1
+          }
       - name: Ключ обновлений задан?
         if: env.HAS_UPDATER_KEY != 'true'
         shell: pwsh
@@ -60,10 +77,14 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         run: |
           $cfg = @{ bundle = @{ createUpdaterArtifacts = $true } }
           if ($env:HAS_SIGNING -eq 'true') {
-            $cfg.bundle.windows = @{ signCommand = "trusted-signing-cli -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} -c ${{ secrets.AZURE_CERT_PROFILE }} -d TimelapseStudio %1" }
+            # значения секретов — через переменные окружения, а не вставкой в текст скрипта
+            $cfg.bundle.windows = @{ signCommand = "trusted-signing-cli -e $env:AZURE_SIGNING_ENDPOINT -a $env:AZURE_SIGNING_ACCOUNT -c $env:AZURE_CERT_PROFILE -d TimelapseStudio %1" }
           }
           $cfg | ConvertTo-Json -Depth 5 -Compress | Set-Content -Path release.json -Encoding utf8
           node ../ui/node_modules/@tauri-apps/cli/tauri.js build --config release.json
@@ -74,9 +95,6 @@ jobs:
         run: |
           $ver = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $tag = "v$ver"
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) {
-            Write-Error "Тег $env:GITHUB_REF_NAME не совпадает с версией $ver в tauri.conf.json"; exit 1
-          }
           $exe = Get-ChildItem "target/release/bundle/nsis/*_${ver}_x64-setup.exe" | Select-Object -First 1
           if (-not $exe) { Write-Error "Установщик не найден"; exit 1 }
           $sigFile = "$($exe.FullName).sig"
@@ -85,6 +103,7 @@ jobs:
           # имя без пробелов: GitHub заменяет пробелы в именах файлов, и ссылка бы не совпала
           $name = "TimelapseStudio_${ver}_x64-setup.exe"
           Copy-Item $exe.FullName "out/$name"
+          Copy-Item $sigFile "out/$name.sig"
           $sig = (Get-Content $sigFile -Raw).Trim()
           $url = "https://github.com/${{ github.repository }}/releases/download/$tag/$name"
           $platform = @{ signature = $sig; url = $url }
@@ -97,6 +116,7 @@ jobs:
           $json | ConvertTo-Json -Depth 5 | Set-Content -Path out/latest.json -Encoding utf8NoBOM
           Get-Content out/latest.json
           "tag=$tag" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -108,3 +128,29 @@ jobs:
           files: |
             out/TimelapseStudio_*_x64-setup.exe
             out/latest.json
+      - name: Файлы для панели (установщик + подпись)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TimelapseStudio-${{ steps.meta.outputs.tag }}-for-panel
+          path: |
+            out/*.exe
+            out/*.exe.sig
+          if-no-files-found: error
+      - name: Загрузка в панель на сервере
+        if: env.HAS_SERVER == 'true'
+        shell: pwsh
+        env:
+          TLS_SERVER_URL: ${{ secrets.TLS_SERVER_URL }}
+          TLS_DEPLOY_KEY: ${{ secrets.TLS_DEPLOY_KEY }}
+          NAME: ${{ steps.meta.outputs.name }}
+        run: |
+          $base = $env:TLS_SERVER_URL.Trim().TrimEnd('/')
+          if (-not $base.StartsWith('https://')) { Write-Error "TLS_SERVER_URL должен начинаться с https:// (ключ не отправляется по открытому каналу)"; exit 1 }
+          # сначала установщик, потом подпись: сервер проверяет подпись по уже загруженному файлу
+          foreach ($pair in @(@("installer", "out/$env:NAME"), @("signature", "out/$env:NAME.sig"))) {
+            $kind = $pair[0]; $file = $pair[1]; $leaf = [uri]::EscapeDataString((Split-Path $file -Leaf))
+            curl.exe -sS --fail-with-body --retry 3 -T "$file" -H "X-Deploy-Key: $env:TLS_DEPLOY_KEY" -H "Content-Type: application/octet-stream" `
+              "$base/api/upload?kind=$kind&name=$leaf"
+            if ($LASTEXITCODE -ne 0) { Write-Error "Не удалось загрузить $file на сервер"; exit 1 }
+          }
+          Write-Host "Готово: откройте панель $base и нажмите «Выпустить версию»."
