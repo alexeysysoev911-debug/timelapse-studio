@@ -252,6 +252,7 @@ pub async fn look_thumbs(
         let mut p = project;
         p.style.auto_color = false;
         p.style.sharpen = false;
+        p.style.denoise = "off".into();
         let (base, _) = tls_core::pipeline::preview_frame(
             &tools,
             &p,

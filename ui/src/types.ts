@@ -36,6 +36,8 @@ export interface TimelapseFx {
   hdr_tonemap: boolean;
 }
 
+export type Denoise = "off" | "light" | "strong";
+
 export interface Style {
   fit: FitMode;
   blur_sigma: number;
@@ -44,6 +46,7 @@ export interface Style {
   look_strength: number;
   auto_color: boolean;
   sharpen: boolean;
+  denoise: Denoise;
   font_family: string;
   hook_font_family: string;
   info_overlay: boolean;
@@ -317,6 +320,7 @@ export function defaultProject(builtinTrack?: string): Project {
       look_strength: 1,
       auto_color: false,
       sharpen: false,
+      denoise: "off",
       font_family: "montserrat",
       hook_font_family: "unbounded",
       info_overlay: true,

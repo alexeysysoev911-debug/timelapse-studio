@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Допустимые уровни шумоподавления.
+pub const DENOISE_LEVELS: &[&str] = &["off", "light", "strong"];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Project {
@@ -181,8 +184,10 @@ pub struct Style {
     pub look_strength: f64,
     /// Автокоррекция уровней и баланса.
     pub auto_color: bool,
-    /// Повышение чёткости.
+    /// Повышение чёткости (CAS — умная резкость без ореолов).
     pub sharpen: bool,
+    /// Шумоподавление: off / light / strong.
+    pub denoise: String,
     /// Шрифт плашки и ника (id встроенного шрифта).
     pub font_family: String,
     /// Шрифт хука.
@@ -219,6 +224,7 @@ impl Default for Style {
             look_strength: 1.0,
             auto_color: false,
             sharpen: false,
+            denoise: "off".into(),
             font_family: "montserrat".into(),
             hook_font_family: "unbounded".into(),
             info_overlay: true,
@@ -420,6 +426,9 @@ impl Project {
             s.look = "none".into();
         }
         s.look_strength = clamp(s.look_strength, 0.0, 1.0, 1.0);
+        if !DENOISE_LEVELS.contains(&s.denoise.as_str()) {
+            s.denoise = "off".into();
+        }
         for f in [&mut s.font_family, &mut s.hook_font_family] {
             if !crate::looks::FONTS.iter().any(|(k, _, _)| *k == f.as_str()) {
                 *f = "montserrat".into();

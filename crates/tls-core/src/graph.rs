@@ -27,6 +27,30 @@ pub const COLOR_FILTERS: &[(&str, &str)] = &[
     ("sharp", "unsharp=5:5:0.8:5:5:0.0"),
 ];
 
+/// Шумоподавление. hqdn3d — пространственно-временное: убирает «зерно» тёмной камеры;
+/// временная часть умеренная, чтобы быстро движущаяся головка принтера не оставляла шлейф.
+/// Без hqdn3d (LGPL-сборки) — адаптивное временное усреднение atadenoise.
+pub fn denoise_filter(level: &str, caps: &Capabilities) -> Option<&'static str> {
+    let hq = caps.has_filter("hqdn3d");
+    match level {
+        "light" if hq => Some("hqdn3d=3:2.5:3:2.5"),
+        "strong" if hq => Some("hqdn3d=6:5:5:4"),
+        "light" if caps.has_filter("atadenoise") => Some("atadenoise=s=5"),
+        "strong" if caps.has_filter("atadenoise") => Some("atadenoise=s=9"),
+        _ => None,
+    }
+}
+
+/// Чёткость: CAS (Contrast Adaptive Sharpening, AMD FidelityFX) усиливает детали
+/// по локальному контрасту — без ореолов и без усиления шума. Нет CAS — классический unsharp.
+pub fn sharpen_filter(caps: &Capabilities) -> &'static str {
+    if caps.has_filter("cas") {
+        "cas=strength=0.6"
+    } else {
+        "unsharp=5:5:0.7:5:5:0.0"
+    }
+}
+
 /// Ускорение, при котором читаем только ключевые кадры (часы исходника → минуты сборки).
 pub const FAST_LONG_SPEED: f64 = 12.0;
 
@@ -428,7 +452,14 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
         let _ = write!(fc, "[{cur}]{filt}[{out}];");
         *cur = out;
     };
-    // цвет: автокоррекция → образ (LUT) → чёткость
+    // картинка: шумоподавление → автокоррекция → образ (LUT) → чёткость
+    match denoise_filter(&st.denoise, caps) {
+        Some(dn) => chain(&mut fc, dn, &mut cur),
+        None if st.denoise != "off" => {
+            warnings.push("В этой сборке ffmpeg нет шумоподавления — пропускаю.".into())
+        }
+        None => {}
+    }
     if st.auto_color && caps.has_filter("normalize") {
         chain(
             &mut fc,
@@ -448,7 +479,7 @@ pub fn build_plan(inp: &PlanInput) -> Plan {
         );
     }
     if st.sharpen {
-        chain(&mut fc, "unsharp=5:5:0.7:5:5:0.0", &mut cur);
+        chain(&mut fc, sharpen_filter(caps), &mut cur);
     }
 
     // слои текста от интерфейса (точно как в предпросмотре, с эмодзи и любыми шрифтами)
@@ -826,6 +857,14 @@ mod tests {
     }
 
     fn plan_with(p: &Project, texts: &Texts) -> Plan {
+        let caps = Capabilities {
+            drawtext_align: true,
+            ..Default::default()
+        };
+        plan_with_caps(p, texts, &caps)
+    }
+
+    fn plan_with_caps(p: &Project, texts: &Texts, caps: &Capabilities) -> Plan {
         let clips = vec![
             PreparedClip {
                 info: info("C:\\Видео\\a, b's [1].mp4", 1920, 1080, 10.0),
@@ -840,10 +879,6 @@ mod tests {
                 stab_file: None,
             },
         ];
-        let caps = Capabilities {
-            drawtext_align: true,
-            ..Default::default()
-        };
         let t = Target::vertical();
         build_plan(&PlanInput {
             project: p,
@@ -854,7 +889,7 @@ mod tests {
             beats: None,
             texts,
             font: Some("C:\\Windows\\Fonts\\segoeuib.ttf".into()),
-            caps: &caps,
+            caps,
             target: &t,
             fps: 30,
             draft: None,
@@ -863,6 +898,69 @@ mod tests {
             overlay: None,
             bare: false,
         })
+    }
+
+    fn filtergraph(plan: &Plan) -> &str {
+        let i = plan
+            .args
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .unwrap();
+        &plan.args[i + 1]
+    }
+
+    #[test]
+    fn denoise_and_cas_sharpen_order_and_fallbacks() {
+        let mut p = Project::default();
+        p.speed = Speed::None;
+        p.style.denoise = "light".into();
+        p.style.auto_color = true;
+        p.style.sharpen = true;
+        let mut caps = Capabilities {
+            drawtext_align: true,
+            ..Default::default()
+        };
+        for f in ["hqdn3d", "cas", "normalize", "atadenoise"] {
+            caps.filters.insert(f.into());
+        }
+        let plan = plan_with_caps(&p, &Texts::default(), &caps);
+        let fc = filtergraph(&plan);
+        let (dn, nm, cs) = (
+            fc.find("hqdn3d=3:2.5:3:2.5").expect(fc),
+            fc.find("normalize=").expect(fc),
+            fc.find("cas=strength=0.6").expect(fc),
+        );
+        // сначала чистим шум, потом цвет, резкость — последней (иначе усилили бы шум)
+        assert!(dn < nm && nm < cs, "{fc}");
+        assert!(!fc.contains("unsharp"), "{fc}");
+
+        p.style.denoise = "strong".into();
+        assert!(
+            filtergraph(&plan_with_caps(&p, &Texts::default(), &caps)).contains("hqdn3d=6:5:5:4")
+        );
+
+        // LGPL-сборка без hqdn3d и cas
+        caps.filters.remove("hqdn3d");
+        caps.filters.remove("cas");
+        let plan = plan_with_caps(&p, &Texts::default(), &caps);
+        let fc = filtergraph(&plan);
+        assert!(
+            fc.contains("atadenoise=s=9") && fc.contains("unsharp=5:5:0.7"),
+            "{fc}"
+        );
+        assert!(plan.warnings.is_empty(), "{:?}", plan.warnings);
+
+        // нет ни одного шумодава — предупреждение, сборка не падает
+        caps.filters.remove("atadenoise");
+        let plan = plan_with_caps(&p, &Texts::default(), &caps);
+        assert!(!filtergraph(&plan).contains("denoise") && !filtergraph(&plan).contains("hqdn3d"));
+        assert!(plan.warnings.iter().any(|w| w.contains("шумоподавления")));
+
+        // выключено — ничего лишнего
+        p.style.denoise = "off".into();
+        p.style.sharpen = false;
+        let fc = filtergraph(&plan_with_caps(&p, &Texts::default(), &caps)).to_string();
+        assert!(!fc.contains("hqdn3d") && !fc.contains("atadenoise") && !fc.contains("cas="));
     }
 
     #[test]

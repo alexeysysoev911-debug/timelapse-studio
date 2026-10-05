@@ -5,7 +5,7 @@ import { fileUrl } from "../api";
 import { loadLookThumbs, pickFiles, pickFolder, pickSingle } from "../actions";
 import { baseName, estimate, fmtSec } from "../logic";
 import { useStore } from "../store";
-import { FONTS, LOOKS, PROFILES, TRANSITIONS, type Codec, type FitMode, type Hardware, type Project, type Quality } from "../types";
+import { FONTS, LOOKS, PROFILES, TRANSITIONS, type Codec, type Denoise, type FitMode, type Hardware, type Project, type Quality } from "../types";
 import { Field, Section, Segmented, Select, Slider, TextInput, Toggle } from "./controls";
 
 const NO_TRACKS: import("../types").BuiltinTrack[] = [];
@@ -169,7 +169,9 @@ function LookTab() {
           <Slider label="Сила образа" min={0} max={1} step={0.05} value={p.style.look_strength} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => upd((q) => void (q.style.look_strength = v), "lookk")} />
         )}
         <Toggle label="Автокоррекция" hint="Выравнивает уровни и баланс белого — тусклое видео становится чище." checked={p.style.auto_color} onChange={(v) => upd((q) => void (q.style.auto_color = v))} />
-        <Toggle label="Чёткость" hint="Подчёркивает мелкие детали." checked={p.style.sharpen} onChange={(v) => upd((q) => void (q.style.sharpen = v))} />
+        <Segmented<Denoise> label="Шумоподавление" hint="Убирает «зерно» тёмной камеры. Чистое видео меньше портится при сжатии в TikTok и Reels." value={p.style.denoise} onChange={(v) => upd((q) => void (q.style.denoise = v))}
+          options={[["off", "Выкл"], ["light", "Слабое"], ["strong", "Сильное"]]} />
+        <Toggle label="Чёткость" hint="Умная резкость (CAS): подчёркивает детали модели без ореолов и без усиления шума." checked={p.style.sharpen} onChange={(v) => upd((q) => void (q.style.sharpen = v))} />
         <p className="note">Сравнить «до / после» можно во вкладке «Оформление» по центру.</p>
       </Section>
       <Section title="Кадр">

@@ -190,7 +190,7 @@ function LivePreview() {
   const t = project.targets.find((x) => x.id === target) ?? project.targets[0];
   const L = layoutOf(t);
   const est = estimate(project, media);
-  const hasLook = project.style.look !== "none" || project.style.auto_color || project.style.sharpen;
+  const hasLook = project.style.look !== "none" || project.style.auto_color || project.style.sharpen || project.style.denoise !== "off";
 
   // подложка (видео без текста) — перерисовывается видеодвижком только при изменении картинки
   useEffect(() => {

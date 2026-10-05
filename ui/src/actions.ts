@@ -245,7 +245,7 @@ export async function renderFrame() {
 export function baseKey(p: Project, target: string, at: number | null): string {
   const clips = p.clips.filter((c) => c.enabled).map((c) => [c.path, c.trim_start, c.trim_end]);
   const s = p.style;
-  return JSON.stringify([clips, p.end_photos, target, at, s.fit, s.blur_sigma, s.look, s.look_strength, s.auto_color, s.sharpen, p.speed, p.transition, p.timelapse.hdr_tonemap]);
+  return JSON.stringify([clips, p.end_photos, target, at, s.fit, s.blur_sigma, s.look, s.look_strength, s.auto_color, s.sharpen, s.denoise, p.speed, p.transition, p.timelapse.hdr_tonemap]);
 }
 
 let baseSeq = 0;
@@ -263,12 +263,13 @@ export async function loadBase() {
   try {
     const opt = { at: s.previewAt, bare: true, scale: 0.5 };
     const after = await api.previewFrame(s.project, s.previewTarget, opt);
-    const needBefore = s.project.style.look !== "none" || s.project.style.auto_color || s.project.style.sharpen;
+    const needBefore = s.project.style.look !== "none" || s.project.style.auto_color || s.project.style.sharpen || s.project.style.denoise !== "off";
     let before: string | null = null;
     if (needBefore) {
       const b = structuredClone(s.project);
       b.style.auto_color = false;
       b.style.sharpen = false;
+      b.style.denoise = "off";
       before = (await api.previewFrame(b, s.previewTarget, { ...opt, look_override: "none" })).path;
     }
     if (seq === baseSeq && gen === currentGen()) st().set({ base: { path: after.path, before, key }, baseLoading: false });

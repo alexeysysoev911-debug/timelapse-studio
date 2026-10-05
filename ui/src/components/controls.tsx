@@ -76,7 +76,7 @@ export function Select<T extends string>({ value, onChange, options, label, hint
   );
 }
 
-export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: [T, string][]; label?: string }) {
+export function Segmented<T extends string>({ value, onChange, options, label, hint }: { value: T; onChange: (v: T) => void; options: [T, string][]; label?: string; hint?: string }) {
   // стрелки ← → переключают вариант, как в стандартных переключателях Windows
   const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
@@ -97,7 +97,7 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
       ))}
     </div>
   );
-  return label ? <Field label={label}>{seg}</Field> : seg;
+  return label ? <Field label={label} hint={hint}>{seg}</Field> : seg;
 }
 
 export function TextInput({

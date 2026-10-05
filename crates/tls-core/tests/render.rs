@@ -562,7 +562,7 @@ fn preview_frame_works() {
     assert!(jpg.is_file());
 }
 
-/// Образ (LUT) с силой, автокоррекция, чёткость, встроенная музыка и встроенный шрифт.
+/// Образ (LUT) с силой, автокоррекция, шумоподавление, чёткость (CAS), встроенная музыка и встроенный шрифт.
 #[test]
 fn looks_builtin_music_and_fonts() {
     let (_s, files) = copy_set(&["a_1080.mp4"]);
@@ -574,6 +574,7 @@ fn looks_builtin_music_and_fonts() {
     p.style.look_strength = 0.6;
     p.style.auto_color = true;
     p.style.sharpen = true;
+    p.style.denoise = "strong".into();
     p.style.font_family = "unbounded".into();
     p.style.hook_text = "Проверка шрифта".into();
     p.music.tracks = vec!["builtin:lofi_workshop".into()];
